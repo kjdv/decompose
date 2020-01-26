@@ -1,2 +1,2 @@
 # decompose
-Service orchestration not depending on docker, optimized for dev.
+Service orchestration not depending on docker, optimised for dev.
