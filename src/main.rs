@@ -17,8 +17,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .long("debug"),
         )
         .arg(
-            clap::Arg::with_name("CONFIG")
-                .help("configuration file, in yaml format")
+            clap::Arg::with_name("config")
+                .help("configuration file, in toml format")
                 .required(true)
                 .index(1),
         )
@@ -33,6 +33,6 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     log::debug!("arguments are config file is {:?}", args);
 
-    decompose::System::from_file(args.value_of("CONFIG").unwrap())
-        .map(|program| log::info!("program is {:?}", program))
+    decompose::System::from_file(args.value_of("config").unwrap())
+        .map(|sys| log::info!("system is {:?}", sys))
 }

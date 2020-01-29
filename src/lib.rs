@@ -15,9 +15,25 @@ pub struct System {
 pub struct Program {
     pub name: String,
     pub argv: Vec<String>,
+
+    #[serde(default)]
     pub env: HashMap<String, String>,
+
+    #[serde(default = "default_cwd")]
     pub cwd: String,
+
+    #[serde(default = "default_enabled")]
     pub enabled: bool,
+}
+
+fn default_cwd() -> String {
+    let cwd = std::env::current_dir().unwrap();
+    let cwd = cwd.into_os_string();
+    cwd.into_string().unwrap()
+}
+
+fn default_enabled() -> bool {
+    true
 }
 
 impl System {
@@ -34,7 +50,7 @@ mod tests {
     use super::*;
     extern crate tempfile;
 
-    use std::io::{Read, Seek, SeekFrom, Write};
+    use std::io::{Seek, SeekFrom, Write};
     use tempfile::Builder;
 
     fn write_file(content: &str) -> tempfile::NamedTempFile {
@@ -66,14 +82,11 @@ mod tests {
             enabled = false
         "#,
         );
-
-        let mut contents = String::new();
-        file.as_file().read_to_string(&mut contents).unwrap();
-
         let system = System::from_file(file.path().to_str().unwrap()).unwrap();
 
         let prog1 = &system.program[0];
 
+        assert_eq!("prog1", prog1.name);
         assert_eq!(vec!["abc", "def"], prog1.argv);
         assert_eq!("jkl", prog1.env.get("ghi").unwrap());
         assert_eq!("pqr", prog1.env.get("mno").unwrap());
@@ -82,9 +95,49 @@ mod tests {
 
         let prog2 = &system.program[1];
 
+        assert_eq!("prog2", prog2.name);
         assert_eq!(vec!["exec"], prog2.argv);
         assert_eq!(0, prog2.env.len());
         assert_eq!(".", prog2.cwd);
         assert_eq!(false, prog2.enabled);
+    }
+
+    #[test]
+    fn test_optional_values_give_defaults() {
+        let file = write_file(r#"
+            [[program]]
+            name = "prog"
+            argv = ["abc"]
+        "#,
+        );
+
+        let system = System::from_file(file.path().to_str().unwrap()).unwrap();
+
+        let prog = &system.program[0];
+
+        assert_eq!(0, prog.env.len());
+        assert_eq!(default_cwd(), prog.cwd);
+        assert_eq!(true, prog.enabled);
+    }
+
+    #[test]
+    fn test_fail_if_mandatory_are_absent() {
+        let file = write_file(r#"
+            [[program]]
+            argv = ["abc"]
+        "#,
+        );
+
+        let res = System::from_file(file.path().to_str().unwrap());
+        res.unwrap_err();
+
+        let file = write_file(r#"
+            [[program]]
+            name = "prog"
+        "#,
+        );
+
+        let res = System::from_file(file.path().to_str().unwrap());
+        res.unwrap_err();
     }
 }
