@@ -4,7 +4,7 @@ extern crate simple_logger;
 
 use std::error::Error;
 
-use decompose;
+mod config;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args = clap::App::new("decompose")
@@ -33,6 +33,6 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     log::debug!("arguments are config file is {:?}", args);
 
-    decompose::System::from_file(args.value_of("config").unwrap())
+    config::System::from_file(args.value_of("config").unwrap())
         .map(|sys| log::info!("system is {:?}", sys))
 }
