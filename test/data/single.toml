@@ -1,0 +1,6 @@
+[[program]]
+name = "single"
+argv = ["../examples/sigterm_intercept"]
+env = {}
+cwd = "."
+enabled = true

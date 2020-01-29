@@ -33,6 +33,6 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     log::debug!("arguments are config file is {:?}", args);
 
-    decompose::Program::from_yaml_file(args.value_of("CONFIG").unwrap())
+    decompose::System::from_file(args.value_of("CONFIG").unwrap())
         .map(|program| log::info!("program is {:?}", program))
 }
