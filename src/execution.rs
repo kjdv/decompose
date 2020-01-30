@@ -10,7 +10,7 @@ use super::*;
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
 pub struct Execution {
-    programs: Vec<Popen>
+    programs: Vec<(String, Popen)>
 }
 
 impl Execution {
@@ -22,7 +22,7 @@ impl Execution {
                 log::info!("starting {:?}", p.name);
 
                 match Execution::create_program(&p) {
-                    Ok(popen) => progs.push(popen),
+                    Ok(popen) => progs.push((p.name.clone(), popen)),
                     Err(err) => return Err(err)
                 }
             } else {
@@ -42,7 +42,7 @@ impl Execution {
             log::debug!("Received signal {:?}", sig);
 
             if sig == SIGCHLD {
-                if !self.alive() {
+                if !self.check_alive() {
                     log::info!("no active programs left");
                     return;
                 }
@@ -56,13 +56,19 @@ impl Execution {
 
     }
 
-    fn alive(&mut self) -> bool {
-        for prog in &mut self.programs {
-            if prog.poll().is_none() {
-                return true;
+    fn check_alive(&mut self) -> bool {
+        let mut idx = 0;
+        while idx < self.programs.len() {
+            let prog = &mut self.programs[idx];
+            match prog.1.poll() {
+                Some(status) => {
+                    log::info!("{:?} exited with status {:?}", prog.0, status);
+                    self.programs.remove(idx);
+                }
+                None => {idx += 1;},
             }
         }
-        false
+        self.programs.len() > 0
     }
 
     fn stop(&mut self) {
@@ -71,17 +77,17 @@ impl Execution {
         log::debug!("sending all children the SIGTERM signal");
 
         for prog in &mut self.programs {
-            prog.terminate()
+            prog.1.terminate()
                 .unwrap_or_else(|e| {
-                    log::warn!("failed to terminate: {:?}", e);
+                    log::warn!("failed to terminate {:?}: {:?}", prog.0, e);
             });
 
-            match prog.wait_timeout(timeout) {
+            match prog.1.wait_timeout(timeout) {
                 Err(e) => log::warn!("failed to wait: {:?}", e),
-                Ok(Some(_)) => (),
+                Ok(Some(status)) => log::info!("{:?} exited with status {:?}", prog.0, status),
                 Ok(None) => {
-                    log::info!("timeout exceeded, killing");
-                    prog.kill()
+                    log::warn!("timeout exceeded, killing {:?}", prog.0);
+                    prog.1.kill()
                         .unwrap_or_else(|e| {log::warn!("failed to kill: {:?}", e);});
                 }
             }
