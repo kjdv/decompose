@@ -18,3 +18,4 @@ signal-hook = "^0.1.13"
 
 [dev-dependencies]
 tempfile = "^3.1.0"
+rouille = "^3.0.0"
