@@ -6,6 +6,8 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::vec::Vec;
 
+type Result<T> = std::result::Result<T, Box<dyn Error>>;
+
 #[derive(Deserialize, Debug)]
 pub struct System {
     pub program: Vec<Program>
@@ -37,11 +39,23 @@ fn default_enabled() -> bool {
 }
 
 impl System {
-    pub fn from_file(filename: &str) -> Result<System, Box<dyn Error>> {
-        serde_any::from_file(filename).map_err(|e| {
-            let e = format!("{:?}", e);
-            e.into()
-        })
+    pub fn from_file(filename: &str) -> Result<System> {
+        serde_any::from_file(filename)
+            .map_err(|e| {
+                let e = format!("{:?}", e);
+                e.into()
+            })
+            .and_then(System::validate)
+    }
+
+    fn validate(sys: System) -> Result<System> {
+        for prog in &sys.program {
+            if prog.argv.len() < 1 {
+                let msg = format!("need at least one argv argument for {:?}", prog.name);
+                return Err(msg.into());
+            }
+        }
+        Ok(sys)
     }
 }
 
@@ -134,6 +148,19 @@ mod tests {
         let file = write_file(r#"
             [[program]]
             name = "prog"
+        "#,
+        );
+
+        let res = System::from_file(file.path().to_str().unwrap());
+        res.unwrap_err();
+    }
+
+    #[test]
+    fn test_fail_unless_exec_is_given() {
+        let file = write_file(r#"
+            [[program]]
+            name = "prog"
+            argv = []
         "#,
         );
 

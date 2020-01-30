@@ -5,8 +5,9 @@ extern crate simple_logger;
 use std::error::Error;
 
 mod config;
+mod execution;
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn do_main() -> Result<(), Box<dyn Error>> {
     let args = clap::App::new("decompose")
         .author("Klaas de Vries")
         .about("service orchestration for devs")
@@ -33,6 +34,19 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     log::debug!("arguments are config file is {:?}", args);
 
-    config::System::from_file(args.value_of("config").unwrap())
-        .map(|sys| log::info!("system is {:?}", sys))
+    let sys = config::System::from_file(args.value_of("config").unwrap())?;
+    log::info!("system is {:?}", sys);
+
+    let mut exec = execution::Execution::from_config(sys)?;
+    exec.wait();
+
+    Ok(())
+}
+
+fn main() -> Result<(), Box<dyn Error>> {
+    do_main()
+        .map_err(|e| {
+            log::error!("{:?}", e);
+            e
+        })
 }

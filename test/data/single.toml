@@ -1,3 +1,3 @@
 [[program]]
 name = "single"
-argv = ["../examples/sigterm_intercept"]
+argv = ["./target/debug/examples/sigterm_intercept"]
