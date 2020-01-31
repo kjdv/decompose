@@ -9,18 +9,11 @@ fn main() {
         .author("Klaas de Vries")
         .about("simple http server, for aide in automated tests of decompose")
         .arg(
-            clap::Arg::with_name("port")
-                .help("port to run on")
-                .short("p")
-                .long("port")
-                .default_value("8080")
-        )
-        .arg(
-            clap::Arg::with_name("host")
-                .help("host to bind on")
-                .short("h")
-                .long("host")
-                .default_value("127.0.0.1")
+            clap::Arg::with_name("address")
+                .help("address to bind to")
+                .short("a")
+                .long("address")
+                .default_value("127.0.0.1:8080")
         )
         .arg(
             clap::Arg::with_name("extra")
@@ -29,9 +22,8 @@ fn main() {
         )
         .get_matches();
 
-    let host = args.value_of("host").unwrap();
-    let port = args.value_of("port").unwrap();
-    serve(format!("{}:{}", host, port).as_str());
+    let address = args.value_of("address").unwrap();
+    serve(address);
 }
 
 fn serve(address: &str) {
