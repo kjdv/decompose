@@ -2,8 +2,6 @@
 extern crate rouille;
 extern crate clap;
 
-use std::fmt::Write;
-
 fn main() {
     let args = clap::App::new("http_server")
         .author("Klaas de Vries")
@@ -38,34 +36,46 @@ fn serve(address: &str) {
                 rouille::Response::text(hello)
             },
             (GET) (/args) => {
-                let mut args = String::new();
-                write!(&mut args, "args").unwrap();
-                for arg in std::env::args().into_iter().skip(1) {
-                    write!(&mut args, " {}", arg).unwrap();
-                }
-                write!(&mut args, "\n").unwrap();
-
-                print!("{}", args);
-                rouille::Response::text(args)
+                request.get_param("idx")
+                    .ok_or("no idx param provided")
+                    .and_then(|idx| {
+                        idx.parse::<usize>()
+                            .map_err(|_| "invalid index")
+                    })
+                    .and_then(|idx| {
+                        std::env::args().nth(idx)
+                            .ok_or("out of range")
+                    })
+                    .map_or_else(|err| {
+                        println!("{}", err);
+                        rouille::Response::text(err).with_status_code(400)
+                    }, |arg| {
+                        println!("{}", arg);
+                        rouille::Response::text(arg)
+                    })
             },
             (GET) (/cwd) => {
                 let cwd = std::env::current_dir().unwrap();
                 let cwd = cwd.into_os_string();
                 let cwd = cwd.into_string().unwrap();
-                let cwd = format!("cwd {}\n", cwd);
 
-                print!("{}", cwd);
+                println!("{}", cwd);
                 rouille::Response::text(cwd)
             },
             (GET) (/env) => {
-                let mut env = String::new();
-                write!(&mut env, "env\n").unwrap();
-                for (key, value) in std::env::vars() {
-                    write!(&mut env, "{}={}\n", key, value).unwrap();
-                }
-
-                print!("{}", env);
-                rouille::Response::text(env)
+                request.get_param("key")
+                    .ok_or("no key provided")
+                    .and_then(|key| {
+                        std::env::var(key)
+                            .map_err(|_| "no such variable")
+                    })
+                    .map_or_else(|err| {
+                        println!("{}", err);
+                        rouille::Response::text(err).with_status_code(400)
+                    }, |val| {
+                        println!("{}", val);
+                        rouille::Response::text(val)
+                    })
             },
             _ => rouille::Response::empty_404()
         )
