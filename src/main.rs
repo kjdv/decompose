@@ -2,9 +2,10 @@ extern crate clap;
 extern crate log;
 extern crate simple_logger;
 
-use decompose;
-
 use std::error::Error;
+
+mod config;
+mod execution;
 
 fn do_main() -> Result<(), Box<dyn Error>> {
     let args = clap::App::new("decompose")
@@ -33,11 +34,11 @@ fn do_main() -> Result<(), Box<dyn Error>> {
 
     log::debug!("arguments are config file is {:?}", args);
 
-    let sys = decompose::config::System::from_file(args.value_of("config").unwrap())?;
+    let sys = config::System::from_file(args.value_of("config").unwrap())?;
     log::info!("system is {:?}", sys);
 
-    let listener: decompose::execution::EventLogger = ();
-    let mut exec = decompose::execution::Execution::from_config(sys, listener)?;
+    let listener: execution::EventLogger = ();
+    let mut exec = execution::Execution::from_config(sys, listener)?;
     exec.wait();
 
     Ok(())

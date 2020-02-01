@@ -1,10 +1,17 @@
+use std::io::BufRead;
+use subprocess;
 use std::path::PathBuf;
 
-pub fn path_to_helper(name: &str) -> PathBuf {
+fn bin_root() -> PathBuf {
     let mut path = std::env::current_exe().expect("current exe");
     path.pop();
-    path.push("examples");
-    path.push(name);
+    path.pop();
+    path
+}
+
+fn decompose_exe() -> PathBuf {
+    let mut path = bin_root();
+    path.push("decompose");
     path
 }
 
@@ -16,77 +23,56 @@ fn data_file(name: &str) -> PathBuf {
     path
 }
 
-use decompose::execution::ProgramInfo;
+pub struct Fixture {
+    pub process: subprocess::Popen,
 
-#[derive(PartialEq, Debug)]
-pub enum Event {
-    Start(),
-    Stop(),
-    ProgramStarted(ProgramInfo),
-    ProgramDied(ProgramInfo),
-    ProgramTerminated(ProgramInfo),
-    ProgramKilled(ProgramInfo),
+    stdout: std::sync::mpsc::Receiver<String>,
+    thread: Option<std::thread::JoinHandle<()>>,
 }
 
-pub struct ExecutionHandle{
-    handle: Option<std::thread::JoinHandle<()>>,
-    pub events: std::sync::mpsc::Receiver<Event>,
-}
+impl Fixture {
+    pub fn new(config: &str) -> Fixture {
+        let mut popen = subprocess::Exec::cmd(decompose_exe().as_os_str())
+            .arg(data_file(config).as_os_str())
+            .stdout(subprocess::Redirection::Pipe)
+            .popen()
+            .expect("popen");
 
-impl ExecutionHandle {
-    pub fn new(config: &str) -> ExecutionHandle {
-        let path = data_file(config);
-        let config = decompose::config::System::from_file(
-            path.to_str().expect("path"))
-            .expect("config file");
         let (tx, rx) = std::sync::mpsc::channel();
-        let listener = EventListener{sender: tx};
-        let mut exec = decompose::execution::Execution::from_config(config, listener).expect("start");
-
+        let mut f = std::io::BufReader::new(popen.stdout.take().unwrap());
         let handle = std::thread::spawn(move || {
-            exec.wait();
+            loop {
+                let mut buffer = String::new();
+                match f.read_line(&mut buffer) {
+                    Ok(_) => tx.send(buffer).unwrap(),
+                    Err(_) => return,
+                };
+            }
         });
 
-        let e = rx.recv().expect("recv");
-        assert_eq!(Event::Start(), e);
-
-        ExecutionHandle{
-            handle: Some(handle),
-            events: rx,
+        Fixture {
+            process: popen,
+            stdout: rx,
+            thread: Some(handle),
         }
     }
 
     pub fn stop(&mut self) {
-        if let Some(h) = self.handle.take() {
-            h.join().expect("join");
+        if let Some(h) = self.thread.take() {
+            self.process.terminate();
+            self.process.wait();
+            h.join();
         }
     }
-}
 
-impl Drop for ExecutionHandle {
-    fn drop(&mut self) {
-        self.stop();
+    fn next_line(&self) -> String {
+        let timeout = std::time::Duration::from_millis(100);
+        self.stdout.recv_timeout(timeout).expect("timeout")
     }
 }
 
-struct EventListener {
-    sender: std::sync::mpsc::Sender<Event>,
-}
-
-impl decompose::execution::Listener for EventListener{
-    fn event(&self, e: decompose::execution::Event) {
-        let e = match e {
-            decompose::execution::Event::Start() => Event::Start(),
-            decompose::execution::Event::Stop() => Event::Stop(),
-            decompose::execution::Event::ProgramStarted(info) =>
-                Event::ProgramStarted(ProgramInfo{name: info.name.clone(), pid: info.pid}),
-            decompose::execution::Event::ProgramDied(info) =>
-                Event::ProgramStarted(ProgramInfo{name: info.name.clone(), pid: info.pid}),
-            decompose::execution::Event::ProgramTerminated(info) =>
-                Event::ProgramStarted(ProgramInfo{name: info.name.clone(), pid: info.pid}),
-            decompose::execution::Event::ProgramKilled(info) =>
-                Event::ProgramStarted(ProgramInfo{name: info.name.clone(), pid: info.pid}),
-        };
-        self.sender.send(e);
+impl Drop for Fixture {
+    fn drop(&mut self) {
+        self.stop();
     }
 }
