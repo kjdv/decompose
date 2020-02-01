@@ -115,8 +115,8 @@ impl<L: Listener> Execution<L> {
                 Ok(None) => {
                     log::warn!("timeout exceeded, killing {}", prog.info);
                     match prog.popen.kill() {
-                        Ok(status) => {
-                            log::debug!("killed {}, status={:?}", prog.info, status);
+                        Ok(_) => {
+                            log::debug!("killed {}", prog.info);
                             let e = Event::ProgramKilled(&prog.info);
                             self.listener.event(e);
                         },

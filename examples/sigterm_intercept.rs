@@ -20,6 +20,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!("Received signal {:?}", sig);
 
         if !args.is_present("diehard") {
+            println!("doing a clean exit");
             return Ok(());
         }
     }
