@@ -9,28 +9,33 @@ use super::*;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
-pub struct Execution {
-    programs: Vec<(String, Popen)>
+pub struct Execution<L: Listener> {
+    programs: Vec<(String, Popen)>,
+    listener: L,
 }
 
-impl Execution {
-    pub fn from_config(cfg: config::System) -> Result<Execution> {
+impl<L: Listener> Execution<L> {
+    pub fn from_config(cfg: config::System, listener: L) -> Result<Execution<L>> {
         let mut progs = vec![];
+
+        listener.event(Event::Start());
 
         for p in &cfg.program {
             if p.enabled {
-                log::info!("starting {:?}", p.name);
 
-                match Execution::create_program(&p) {
-                    Ok(popen) => progs.push((p.name.clone(), popen)),
+                match Execution::<L>::create_program(&p) {
+                    Ok(popen) => {
+                        listener.event(Event::ProgramStarted(&p.name, popen.pid().expect("pid")));
+                        progs.push((p.name.clone(), popen))
+                    },
                     Err(err) => return Err(err)
                 }
             } else {
-                log::info!("{:?} is disabled, skipping", p.name);
+                log::info!("program {:?} is disabled, skipping", p.name);
             }
         }
 
-        Ok(Execution{programs: progs})
+        Ok(Execution{programs: progs, listener: listener})
     }
 
     pub fn wait(&mut self) {
@@ -44,12 +49,14 @@ impl Execution {
             if sig == SIGCHLD {
                 if !self.check_alive() {
                     log::info!("no active programs left");
+                    self.listener.event(Event::Stop());
                     return;
                 }
             } else {
                 log::info!("terminating all programs");
                 self.stop();
                 log::info!("done");
+                self.listener.event(Event::Stop());
                 return;
             }
         }
@@ -62,7 +69,7 @@ impl Execution {
             let prog = &mut self.programs[idx];
             match prog.1.poll() {
                 Some(status) => {
-                    log::info!("{:?} exited with status {:?}", prog.0, status);
+                    self.listener.event(Event::ProgramDied(&prog.0, status));
                     self.programs.remove(idx);
                 }
                 None => {idx += 1;},
@@ -84,11 +91,19 @@ impl Execution {
 
             match prog.1.wait_timeout(timeout) {
                 Err(e) => log::warn!("failed to wait: {:?}", e),
-                Ok(Some(status)) => log::info!("{:?} exited with status {:?}", prog.0, status),
+                Ok(Some(status)) => {
+                    let e = Event::ProgramTerminated(&prog.0, status);
+                    self.listener.event(e);
+                },
                 Ok(None) => {
                     log::warn!("timeout exceeded, killing {:?}", prog.0);
-                    prog.1.kill()
-                        .unwrap_or_else(|e| {log::warn!("failed to kill: {:?}", e);});
+                    match prog.1.kill() {
+                        Ok(_) => {
+                            let e = Event::ProgramKilled(&prog.0, prog.1.exit_status().expect("exit status"));
+                            self.listener.event(e);
+                        },
+                        Err(e) => {log::warn!("failed to kill: {:?}", e);}
+                    }
                 }
             }
         }
@@ -108,5 +123,36 @@ impl Execution {
             .cwd(&cfg.cwd)
             .popen()
             .map_err(|e| e.into())
+    }
+}
+
+pub enum Event<'a> {
+    Start(),
+    Stop(),
+    ProgramStarted(&'a String, u32),
+    ProgramDied(&'a String, subprocess::ExitStatus),
+    ProgramTerminated(&'a String, subprocess::ExitStatus),
+    ProgramKilled(&'a String, subprocess::ExitStatus),
+}
+
+pub trait Listener {
+    fn event(&self, e: Event);
+}
+
+pub type EventLogger = ();
+
+impl Listener for EventLogger {
+    fn event(&self, e: Event) {
+        match e {
+            Event::Start() => log::info!("starting execution"),
+            Event::Stop() => log::info!("stopping execution"),
+            Event::ProgramStarted(name, pid) => log::info!("program {} at pid {} started", name, pid),
+            Event::ProgramDied(name, status) =>
+                log::info!("program {} at died, status {:?}", name, status),
+            Event::ProgramTerminated(name, status) =>
+                log::info!("program {} at terminated, status {:?}", name, status),
+            Event::ProgramKilled(name, status) =>
+                log::info!("program {} killed, status {:?}", name, status),
+        }
     }
 }

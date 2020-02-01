@@ -37,7 +37,8 @@ fn do_main() -> Result<(), Box<dyn Error>> {
     let sys = config::System::from_file(args.value_of("config").unwrap())?;
     log::info!("system is {:?}", sys);
 
-    let mut exec = execution::Execution::from_config(sys)?;
+    let listener: execution::EventLogger = ();
+    let mut exec = execution::Execution::from_config(sys, listener)?;
     exec.wait();
 
     Ok(())
