@@ -1,4 +1,5 @@
 extern crate subprocess;
+extern crate string_error;
 
 use log;
 use std::error::Error;
@@ -10,23 +11,37 @@ use super::*;
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
 pub struct Execution<L: Listener> {
-    programs: Vec<(String, Popen)>,
+    programs: Vec<Program>,
     listener: L,
 }
 
 impl<L: Listener> Execution<L> {
     pub fn from_config(cfg: config::System, listener: L) -> Result<Execution<L>> {
-        let mut progs = vec![];
-
         listener.event(Event::Start());
+        let mut execution = Execution{
+            programs: Vec::new(),
+            listener: listener,
+        };
 
         for p in &cfg.program {
             if p.enabled {
 
                 match Execution::<L>::create_program(&p) {
                     Ok(popen) => {
-                        listener.event(Event::ProgramStarted(&p.name, popen.pid().expect("pid")));
-                        progs.push((p.name.clone(), popen))
+                        let pid = popen.pid()
+                            .ok_or(string_error::new_err("could not obtain pid"))?;
+                        let prog = Program{
+                            info: ProgramInfo {
+                                name: p.name.clone(),
+                                pid: pid,
+                            },
+                            popen: popen,
+                        };
+
+                        let e = Event::ProgramStarted(&prog.info);
+                        execution.listener.event(e);
+
+                        execution.programs.push(prog)
                     },
                     Err(err) => return Err(err)
                 }
@@ -35,7 +50,7 @@ impl<L: Listener> Execution<L> {
             }
         }
 
-        Ok(Execution{programs: progs, listener: listener})
+        Ok(execution)
     }
 
     pub fn wait(&mut self) {
@@ -67,9 +82,10 @@ impl<L: Listener> Execution<L> {
         let mut idx = 0;
         while idx < self.programs.len() {
             let prog = &mut self.programs[idx];
-            match prog.1.poll() {
+            match prog.popen.poll() {
                 Some(status) => {
-                    self.listener.event(Event::ProgramDied(&prog.0, status));
+                    log::debug!("{} died, stauts={:?}", prog.info, status);
+                    self.listener.event(Event::ProgramDied(&prog.info));
                     self.programs.remove(idx);
                 }
                 None => {idx += 1;},
@@ -84,25 +100,27 @@ impl<L: Listener> Execution<L> {
         log::debug!("sending all children the SIGTERM signal");
 
         for prog in &mut self.programs {
-            prog.1.terminate()
+            prog.popen.terminate()
                 .unwrap_or_else(|e| {
-                    log::warn!("failed to terminate {:?}: {:?}", prog.0, e);
+                    log::warn!("failed to terminate {}: {:?}", prog.info, e);
             });
 
-            match prog.1.wait_timeout(timeout) {
+            match prog.popen.wait_timeout(timeout) {
                 Err(e) => log::warn!("failed to wait: {:?}", e),
                 Ok(Some(status)) => {
-                    let e = Event::ProgramTerminated(&prog.0, status);
+                    log::debug!("terminated {}, status={:?}", prog.info, status);
+                    let e = Event::ProgramTerminated(&prog.info);
                     self.listener.event(e);
                 },
                 Ok(None) => {
-                    log::warn!("timeout exceeded, killing {:?}", prog.0);
-                    match prog.1.kill() {
-                        Ok(_) => {
-                            let e = Event::ProgramKilled(&prog.0, prog.1.exit_status().expect("exit status"));
+                    log::warn!("timeout exceeded, killing {}", prog.info);
+                    match prog.popen.kill() {
+                        Ok(status) => {
+                            log::debug!("killed {}, status={:?}", prog.info, status);
+                            let e = Event::ProgramKilled(&prog.info);
                             self.listener.event(e);
                         },
-                        Err(e) => {log::warn!("failed to kill: {:?}", e);}
+                        Err(e) => {log::warn!("failed to kill {}: {:?}", prog.info, e);}
                     }
                 }
             }
@@ -126,13 +144,29 @@ impl<L: Listener> Execution<L> {
     }
 }
 
+pub struct ProgramInfo {
+    name: String,
+    pid: u32,
+}
+
+struct Program {
+    info: ProgramInfo,
+    popen: Popen,
+}
+
+impl std::fmt::Display for ProgramInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}:{}", self.name, self.pid)
+    }
+}
+
 pub enum Event<'a> {
     Start(),
     Stop(),
-    ProgramStarted(&'a String, u32),
-    ProgramDied(&'a String, subprocess::ExitStatus),
-    ProgramTerminated(&'a String, subprocess::ExitStatus),
-    ProgramKilled(&'a String, subprocess::ExitStatus),
+    ProgramStarted(&'a ProgramInfo),
+    ProgramDied(&'a ProgramInfo),
+    ProgramTerminated(&'a ProgramInfo),
+    ProgramKilled(&'a ProgramInfo),
 }
 
 pub trait Listener {
@@ -146,13 +180,13 @@ impl Listener for EventLogger {
         match e {
             Event::Start() => log::info!("starting execution"),
             Event::Stop() => log::info!("stopping execution"),
-            Event::ProgramStarted(name, pid) => log::info!("program {} at pid {} started", name, pid),
-            Event::ProgramDied(name, status) =>
-                log::info!("program {} at died, status {:?}", name, status),
-            Event::ProgramTerminated(name, status) =>
-                log::info!("program {} at terminated, status {:?}", name, status),
-            Event::ProgramKilled(name, status) =>
-                log::info!("program {} killed, status {:?}", name, status),
+            Event::ProgramStarted(info) => log::info!("{} started", info),
+            Event::ProgramDied(info) =>
+                log::info!("{} died", info),
+            Event::ProgramTerminated(info) =>
+                log::info!("{} terminated", info),
+            Event::ProgramKilled(info) =>
+                log::info!("{} killed", info),
         }
     }
 }
