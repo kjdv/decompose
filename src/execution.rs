@@ -125,6 +125,8 @@ impl<L: Listener> Execution<L> {
                 }
             }
         }
+
+        self.programs.clear();
     }
 
     fn create_program(cfg: &config::Program) -> Result<Popen> {
@@ -144,9 +146,15 @@ impl<L: Listener> Execution<L> {
     }
 }
 
+impl<L: Listener> Drop for Execution<L> {
+    fn drop(&mut self) {
+        self.stop();
+    }
+}
+
 pub struct ProgramInfo {
-    name: String,
-    pid: u32,
+    pub name: String,
+    pub pid: u32,
 }
 
 struct Program {
