@@ -13,6 +13,7 @@ type Result<T> = std::result::Result<T, Box<dyn Error>>;
 pub struct Execution<L: Listener> {
     programs: Vec<Program>,
     listener: L,
+    terminate_timeout: std::time::Duration,
 }
 
 impl<L: Listener> Execution<L> {
@@ -21,6 +22,7 @@ impl<L: Listener> Execution<L> {
         let mut execution = Execution{
             programs: Vec::new(),
             listener: listener,
+            terminate_timeout: std::time::Duration::from_secs_f64(cfg.terminate_timeout),
         };
 
         for p in &cfg.program {
@@ -95,8 +97,6 @@ impl<L: Listener> Execution<L> {
     }
 
     fn stop(&mut self) {
-        let timeout = std::time::Duration::new(1, 0);
-
         log::debug!("sending all children the SIGTERM signal");
 
         for prog in &mut self.programs {
@@ -105,7 +105,7 @@ impl<L: Listener> Execution<L> {
                     log::warn!("failed to terminate {}: {:?}", prog.info, e);
             });
 
-            match prog.popen.wait_timeout(timeout) {
+            match prog.popen.wait_timeout(self.terminate_timeout) {
                 Err(e) => log::warn!("failed to wait: {:?}", e),
                 Ok(Some(status)) => {
                     log::debug!("terminated {}, status={:?}", prog.info, status);

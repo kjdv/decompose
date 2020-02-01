@@ -10,7 +10,10 @@ type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
 #[derive(Deserialize, Debug)]
 pub struct System {
-    pub program: Vec<Program>
+    pub program: Vec<Program>,
+
+    #[serde(default = "default_terminate_timeout")]
+    pub terminate_timeout: f64,
 }
 
 #[derive(Deserialize, Debug)]
@@ -36,6 +39,10 @@ fn default_cwd() -> String {
 
 fn default_enabled() -> bool {
     true
+}
+
+fn default_terminate_timeout() -> f64 {
+    1.0
 }
 
 impl System {
@@ -81,6 +88,8 @@ mod tests {
     #[test]
     fn test_read() {
         let file = write_file(r#"
+            terminate_timeout = 0.5
+
             [[program]]
             name = "prog1"
             argv = ["abc", "def"]
@@ -97,6 +106,8 @@ mod tests {
         "#,
         );
         let system = System::from_file(file.path().to_str().unwrap()).unwrap();
+
+        assert_eq!(0.5, system.terminate_timeout);
 
         let prog1 = &system.program[0];
 
@@ -126,6 +137,8 @@ mod tests {
         );
 
         let system = System::from_file(file.path().to_str().unwrap()).unwrap();
+
+        assert_eq!(1.0, system.terminate_timeout);
 
         let prog = &system.program[0];
 
