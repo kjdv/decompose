@@ -18,7 +18,8 @@ fn data_file(name: &str) -> PathBuf {
 
 use decompose::execution::ProgramInfo;
 
-pub enum Event<> {
+#[derive(PartialEq, Debug)]
+pub enum Event {
     Start(),
     Stop(),
     ProgramStarted(ProgramInfo),
@@ -45,6 +46,9 @@ impl ExecutionHandle {
         let handle = std::thread::spawn(move || {
             exec.wait();
         });
+
+        let e = rx.recv().expect("recv");
+        assert_eq!(Event::Start(), e);
 
         ExecutionHandle{
             handle: Some(handle),

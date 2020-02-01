@@ -152,6 +152,7 @@ impl<L: Listener> Drop for Execution<L> {
     }
 }
 
+#[derive(PartialEq, Debug)]
 pub struct ProgramInfo {
     pub name: String,
     pub pid: u32,
