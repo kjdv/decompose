@@ -1,7 +1,10 @@
+use std::sync::Once;
 use std::str::FromStr;
 use std::io::BufRead;
 use subprocess;
 use std::path::PathBuf;
+
+static LOG_INIT: Once = Once::new();
 
 fn bin_root() -> PathBuf {
     let mut path = std::env::current_exe().expect("current exe");
@@ -33,7 +36,12 @@ pub struct Fixture {
 
 impl Fixture {
     pub fn new(config: &str) -> Fixture {
+        LOG_INIT.call_once(|| {
+            simple_logger::init_with_level(log::Level::Info).expect("log init");
+        });
+
         let mut popen = subprocess::Exec::cmd(decompose_exe().as_os_str())
+            .arg("--debug")
             .arg(data_file(config).as_os_str())
             .stdout(subprocess::Redirection::Pipe)
             .popen()
@@ -44,10 +52,16 @@ impl Fixture {
         let handle = std::thread::spawn(move || {
             loop {
                 let mut buffer = String::new();
-                match f.read_line(&mut buffer) {
-                    Ok(_) => tx.send(buffer).unwrap(),
-                    Err(_) => return,
-                };
+                if let Ok(n) = f.read_line(&mut buffer) {
+                    if n > 0 {
+                        log::debug!("received from program: {}", buffer);
+                        tx.send(buffer).expect("send");
+                    } else {
+                        return;
+                    }
+                } else {
+                    return;
+                }
             }
         });
 
@@ -59,31 +73,38 @@ impl Fixture {
     }
 
     pub fn stop(&mut self) {
+        self.process.terminate().unwrap();
+        self.process.wait().unwrap();
         if let Some(h) = self.thread.take() {
-            self.process.terminate().unwrap();
-            self.process.wait().unwrap();
             h.join().unwrap();
         }
     }
 
     fn next_line(&self) -> String {
         let timeout = std::time::Duration::from_millis(100);
-        self.stdout.recv_timeout(timeout).expect("timeout")
+        let line = self.stdout.recv_timeout(timeout).expect("timeout");
+        log::debug!("got line {}", line);
+        line
     }
 
-    pub fn expect_line(&self, re: &str) -> Vec<String> { // returns captures, if any
+    fn expect_line(&self, re: &str) -> Vec<String> { // returns captures
         let re = regex::Regex::new(re).expect("valid regex");
         loop {
             let line = self.next_line();
             if let Some(_) = re.find(line.as_str()) {
-                let mut result = Vec::<String>::new();
                 let caps = re.captures(line.as_str()).unwrap();
-                for idx in 1..re.captures_len() {
-                    result.push(String::from_str(caps.get(idx).unwrap().as_str()).unwrap());
-                }
+                let result: Vec<String> = caps.iter()
+                    .map(|c| String::from_str(c.expect("match").as_str()).unwrap())
+                    .collect();
                 return result;
-            };
+            } else {
+                log::info!("discarding {}", line);
+            }
         }
+    }
+
+    pub fn expect_start(&self) {
+        self.expect_line(r"\[decompose::execution\] starting execution");
     }
 }
 

@@ -3,6 +3,7 @@ mod common;
 use common::*;
 
 #[test]
-fn start() {
-    assert!(false);
+fn can_start() {
+    let f = Fixture::new("single.toml");
+    f.expect_start();
 }
