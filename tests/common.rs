@@ -1,3 +1,4 @@
+use std::str::FromStr;
 use std::io::BufRead;
 use subprocess;
 use std::path::PathBuf;
@@ -59,15 +60,30 @@ impl Fixture {
 
     pub fn stop(&mut self) {
         if let Some(h) = self.thread.take() {
-            self.process.terminate();
-            self.process.wait();
-            h.join();
+            self.process.terminate().unwrap();
+            self.process.wait().unwrap();
+            h.join().unwrap();
         }
     }
 
     fn next_line(&self) -> String {
         let timeout = std::time::Duration::from_millis(100);
         self.stdout.recv_timeout(timeout).expect("timeout")
+    }
+
+    pub fn expect_line(&self, re: &str) -> Vec<String> { // returns captures, if any
+        let re = regex::Regex::new(re).expect("valid regex");
+        loop {
+            let line = self.next_line();
+            if let Some(_) = re.find(line.as_str()) {
+                let mut result = Vec::<String>::new();
+                let caps = re.captures(line.as_str()).unwrap();
+                for idx in 1..re.captures_len() {
+                    result.push(String::from_str(caps.get(idx).unwrap().as_str()).unwrap());
+                }
+                return result;
+            };
+        }
     }
 }
 
