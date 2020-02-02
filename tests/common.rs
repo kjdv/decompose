@@ -28,10 +28,8 @@ fn data_file(name: &str) -> PathBuf {
 }
 
 pub struct Fixture {
-    pub process: subprocess::Popen,
-
-    stdout: std::sync::mpsc::Receiver<String>,
-    thread: Option<std::thread::JoinHandle<()>>,
+    process: subprocess::Popen,
+    reader: std::io::BufReader<std::fs::File>,
 }
 
 impl Fixture {
@@ -47,47 +45,26 @@ impl Fixture {
             .popen()
             .expect("popen");
 
-        let (tx, rx) = std::sync::mpsc::channel();
-        let mut f = std::io::BufReader::new(popen.stdout.take().unwrap());
-        let handle = std::thread::spawn(move || {
-            loop {
-                let mut buffer = String::new();
-                if let Ok(n) = f.read_line(&mut buffer) {
-                    if n > 0 {
-                        log::debug!("received from program: {}", buffer);
-                        tx.send(buffer).expect("send");
-                    } else {
-                        return;
-                    }
-                } else {
-                    return;
-                }
-            }
-        });
-
+        let reader = std::io::BufReader::new(popen.stdout.take().unwrap());
         Fixture {
             process: popen,
-            stdout: rx,
-            thread: Some(handle),
+            reader: reader,
         }
     }
 
     pub fn stop(&mut self) {
         self.process.terminate().unwrap();
         self.process.wait().unwrap();
-        if let Some(h) = self.thread.take() {
-            h.join().unwrap();
-        }
     }
 
-    fn next_line(&self) -> String {
-        let timeout = std::time::Duration::from_millis(100);
-        let line = self.stdout.recv_timeout(timeout).expect("timeout");
-        log::debug!("got line {}", line);
+    fn next_line(&mut self) -> String {
+        let mut line = String::new();
+        let n = self.reader.read_line(&mut line).expect("no input");
+        assert_ne!(0, n);
         line
     }
 
-    fn expect_line(&self, re: &str) -> Vec<String> { // returns captures
+    fn expect_line(&mut self, re: &str) -> Vec<String> { // returns captures
         let re = regex::Regex::new(re).expect("valid regex");
         loop {
             let line = self.next_line();
@@ -103,7 +80,7 @@ impl Fixture {
         }
     }
 
-    pub fn expect_start(&self) {
+    pub fn expect_start(&mut self) {
         self.expect_line(r"\[decompose::execution\] starting execution");
     }
 }
