@@ -3,6 +3,7 @@ use std::str::FromStr;
 use std::io::BufRead;
 use subprocess;
 use std::path::PathBuf;
+use nix::sys::signal::{kill, SIGTERM};
 
 static LOG_INIT: Once = Once::new();
 
@@ -95,6 +96,25 @@ impl Fixture {
             pid: caps.get(2).unwrap().to_string().parse().unwrap(),
         }
     }
+
+    pub fn expect_program_dies(&mut self, prog: &ProgramInfo) {
+        let re = format!("\\[decompose::execution\\] {} died", *prog);
+        self.expect_line(re.as_str());
+    }
+
+    pub fn expect_program_terminates(&mut self, prog: &ProgramInfo) {
+        let re = format!("\\[decompose::execution\\] {} terminated", *prog);
+        self.expect_line(re.as_str());
+    }
+
+    pub fn expect_program_is_killed(&mut self, prog: &ProgramInfo) {
+        let re = format!("\\[decompose::execution\\] {} killed", *prog);
+        self.expect_line(re.as_str());
+    }
+
+    pub fn terminate_program(&self, program: &ProgramInfo) {
+        kill(nix::unistd::Pid::from_raw(program.pid), SIGTERM).expect("term");
+    }
 }
 
 impl Drop for Fixture {
@@ -106,7 +126,7 @@ impl Drop for Fixture {
 #[derive(PartialEq, Debug)]
 pub struct ProgramInfo {
     pub name: String,
-    pub pid: u32,
+    pub pid: i32,
 }
 
 impl std::fmt::Display for ProgramInfo {

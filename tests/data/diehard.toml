@@ -1,0 +1,5 @@
+terminate_timeout = 10
+
+[[program]]
+name = "diehard"
+argv = ["./target/debug/examples/sigterm_intercept", "--diehard"]
