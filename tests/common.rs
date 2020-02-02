@@ -53,7 +53,7 @@ impl Fixture {
         let reader = std::io::BufReader::new(popen.stdout.take().unwrap());
         Fixture {
             process: popen,
-            reader: reader,
+            reader,
         }
     }
 
@@ -74,7 +74,7 @@ impl Fixture {
         let re = regex::Regex::new(re).expect("valid regex");
         loop {
             let line = self.next_line();
-            if let Some(_) = re.find(line.as_str()) {
+            if re.find(line.as_str()).is_some() {
                 let caps = re.captures(line.as_str()).unwrap();
                 let result: Vec<String> = caps.iter()
                     .map(|c| String::from_str(c.expect("match").as_str()).unwrap())

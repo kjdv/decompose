@@ -107,7 +107,7 @@ mod tests {
         );
         let system = System::from_file(file.path().to_str().unwrap()).unwrap();
 
-        assert_eq!(0.5, system.terminate_timeout);
+        assert!((system.terminate_timeout - 0.5).abs() < 0.001);
 
         let prog1 = &system.program[0];
 
@@ -138,7 +138,7 @@ mod tests {
 
         let system = System::from_file(file.path().to_str().unwrap()).unwrap();
 
-        assert_eq!(1.0, system.terminate_timeout);
+        assert!((system.terminate_timeout - 1.0).abs() < 0.001);
 
         let prog = &system.program[0];
 
