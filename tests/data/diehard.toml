@@ -1,4 +1,4 @@
-terminate_timeout = 10
+terminate_timeout = 0.01
 
 [[program]]
 name = "diehard"

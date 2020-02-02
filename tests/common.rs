@@ -36,7 +36,7 @@ pub struct Fixture {
 impl Fixture {
     pub fn new(config: &str) -> Fixture {
         LOG_INIT.call_once(|| {
-            simple_logger::init_with_level(log::Level::Info).expect("log init");
+            simple_logger::init_with_level(log::Level::Debug).expect("log init");
         });
 
         let mut popen = subprocess::Exec::cmd(decompose_exe().as_os_str())
@@ -45,6 +45,10 @@ impl Fixture {
             .stdout(subprocess::Redirection::Pipe)
             .popen()
             .expect("popen");
+
+        let dur = std::time::Duration::from_millis(100);
+        log::info!("waiting {:?} to let everything start", dur);
+        std::thread::sleep(dur); // todo: find a better way to deal with these race conditions
 
         let reader = std::io::BufReader::new(popen.stdout.take().unwrap());
         Fixture {
@@ -62,6 +66,7 @@ impl Fixture {
         let mut line = String::new();
         let n = self.reader.read_line(&mut line).expect("no input");
         assert_ne!(0, n);
+        log::debug!("line: {}", line);
         line
     }
 
@@ -75,8 +80,6 @@ impl Fixture {
                     .map(|c| String::from_str(c.expect("match").as_str()).unwrap())
                     .collect();
                 return result;
-            } else {
-                log::info!("discarding {}", line);
             }
         }
     }
