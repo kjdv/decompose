@@ -83,10 +83,34 @@ impl Fixture {
     pub fn expect_start(&mut self) {
         self.expect_line(r"\[decompose::execution\] starting execution");
     }
+
+    pub fn expect_stop(&mut self) {
+        self.expect_line(r"\[decompose::execution\] stopping execution");
+    }
+
+    pub fn expect_program_starts(&mut self) -> ProgramInfo {
+        let caps = self.expect_line(r"\[decompose::execution\] ([a-zA-Z][a-zA-Z0-9]+):([0-9]+) started");
+        ProgramInfo {
+            name: caps.get(1).unwrap().to_string(),
+            pid: caps.get(2).unwrap().to_string().parse().unwrap(),
+        }
+    }
 }
 
 impl Drop for Fixture {
     fn drop(&mut self) {
         self.stop();
+    }
+}
+
+#[derive(PartialEq, Debug)]
+pub struct ProgramInfo {
+    pub name: String,
+    pub pid: u32,
+}
+
+impl std::fmt::Display for ProgramInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}:{}", self.name, self.pid)
     }
 }
