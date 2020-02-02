@@ -25,9 +25,10 @@ fn do_main() -> Result<(), Box<dyn Error>> {
         )
         .get_matches();
 
-    let level = match args.is_present("debug") {
-        true => log::Level::Debug,
-        false => log::Level::Info,
+    let level = if args.is_present("debug") {
+        log::Level::Debug
+    } else {
+        log::Level::Info
     };
 
     simple_logger::init_with_level(level)?;
@@ -37,8 +38,7 @@ fn do_main() -> Result<(), Box<dyn Error>> {
     let sys = config::System::from_file(args.value_of("config").unwrap())?;
     log::info!("system is {:?}", sys);
 
-    let listener: execution::EventLogger = ();
-    let mut exec = execution::Execution::from_config(sys, listener)?;
+    let mut exec = execution::Execution::from_config(sys)?;
     exec.wait();
 
     Ok(())

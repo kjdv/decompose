@@ -57,7 +57,7 @@ impl System {
 
     fn validate(sys: System) -> Result<System> {
         for prog in &sys.program {
-            if prog.argv.len() < 1 {
+            if prog.argv.is_empty() {
                 let msg = format!("need at least one argv argument for {:?}", prog.name);
                 return Err(msg.into());
             }

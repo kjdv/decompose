@@ -10,39 +10,34 @@ use super::*;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
-pub struct Execution<L: Listener> {
+pub struct Execution {
     programs: Vec<Program>,
-    listener: L,
     terminate_timeout: std::time::Duration,
 }
 
-impl<L: Listener> Execution<L> {
-    pub fn from_config(cfg: config::System, listener: L) -> Result<Execution<L>> {
-        listener.event(Event::Start());
+impl Execution {
+    pub fn from_config(cfg: config::System) -> Result<Execution> {
+        log::info!("starting execution");
         let mut execution = Execution{
             programs: Vec::new(),
-            listener: listener,
             terminate_timeout: std::time::Duration::from_secs_f64(cfg.terminate_timeout),
         };
 
         for p in &cfg.program {
             if p.enabled {
-
-                match Execution::<L>::create_program(&p) {
+                match Execution::create_program(&p) {
                     Ok(popen) => {
                         let pid = popen.pid()
-                            .ok_or(string_error::new_err("could not obtain pid"))?;
+                            .ok_or_else(|| string_error::new_err("could not obtain pid"))?;
                         let prog = Program{
                             info: ProgramInfo {
                                 name: p.name.clone(),
-                                pid: pid,
+                                pid,
                             },
-                            popen: popen,
+                            program: popen,
                         };
 
-                        let e = Event::ProgramStarted(&prog.info);
-                        execution.listener.event(e);
-
+                        log::info!("{} started", prog.info);
                         execution.programs.push(prog)
                     },
                     Err(err) => return Err(err)
@@ -66,14 +61,13 @@ impl<L: Listener> Execution<L> {
             if sig == SIGCHLD {
                 if !self.check_alive() {
                     log::info!("no active programs left");
-                    self.listener.event(Event::Stop());
+                    log::info!("stopping execution");
                     return;
                 }
             } else {
                 log::info!("terminating all programs");
                 self.stop();
-                log::info!("done");
-                self.listener.event(Event::Stop());
+                log::info!("stopping execution");
                 return;
             }
         }
@@ -84,41 +78,36 @@ impl<L: Listener> Execution<L> {
         let mut idx = 0;
         while idx < self.programs.len() {
             let prog = &mut self.programs[idx];
-            match prog.popen.poll() {
-                Some(status) => {
-                    log::debug!("{} died, stauts={:?}", prog.info, status);
-                    self.listener.event(Event::ProgramDied(&prog.info));
+            match prog.program.poll() {
+                Some(_) => {
+                    log::info!("{} died", prog.info);
                     self.programs.remove(idx);
                 }
                 None => {idx += 1;},
             }
         }
-        self.programs.len() > 0
+        !self.programs.is_empty()
     }
 
     fn stop(&mut self) {
         log::debug!("sending all children the SIGTERM signal");
 
         for prog in &mut self.programs {
-            prog.popen.terminate()
+            prog.program.terminate()
                 .unwrap_or_else(|e| {
                     log::warn!("failed to terminate {}: {:?}", prog.info, e);
             });
 
-            match prog.popen.wait_timeout(self.terminate_timeout) {
+            match prog.program.wait_timeout(self.terminate_timeout) {
                 Err(e) => log::warn!("failed to wait: {:?}", e),
-                Ok(Some(status)) => {
-                    log::debug!("terminated {}, status={:?}", prog.info, status);
-                    let e = Event::ProgramTerminated(&prog.info);
-                    self.listener.event(e);
+                Ok(Some(_)) => {
+                    log::info!("{} terminated", prog.info);
                 },
                 Ok(None) => {
                     log::warn!("timeout exceeded, killing {}", prog.info);
-                    match prog.popen.kill() {
+                    match prog.program.kill() {
                         Ok(_) => {
-                            log::debug!("killed {}", prog.info);
-                            let e = Event::ProgramKilled(&prog.info);
-                            self.listener.event(e);
+                            log::info!("{} killed", prog.info);
                         },
                         Err(e) => {log::warn!("failed to kill {}: {:?}", prog.info, e);}
                     }
@@ -130,7 +119,7 @@ impl<L: Listener> Execution<L> {
     }
 
     fn create_program(cfg: &config::Program) -> Result<Popen> {
-        assert!(cfg.argv.len() > 0);
+        assert!(!cfg.argv.is_empty());
         assert!(cfg.enabled);
 
         let env: Vec<(String, String)>= cfg.env.iter()
@@ -146,7 +135,7 @@ impl<L: Listener> Execution<L> {
     }
 }
 
-impl<L: Listener> Drop for Execution<L> {
+impl Drop for Execution {
     fn drop(&mut self) {
         self.stop();
     }
@@ -160,42 +149,11 @@ pub struct ProgramInfo {
 
 struct Program {
     info: ProgramInfo,
-    popen: Popen,
+    program: Popen,
 }
 
 impl std::fmt::Display for ProgramInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "{}:{}", self.name, self.pid)
-    }
-}
-
-pub enum Event<'a> {
-    Start(),
-    Stop(),
-    ProgramStarted(&'a ProgramInfo),
-    ProgramDied(&'a ProgramInfo),
-    ProgramTerminated(&'a ProgramInfo),
-    ProgramKilled(&'a ProgramInfo),
-}
-
-pub trait Listener {
-    fn event(&self, e: Event);
-}
-
-pub type EventLogger = ();
-
-impl Listener for EventLogger {
-    fn event(&self, e: Event) {
-        match e {
-            Event::Start() => log::info!("starting execution"),
-            Event::Stop() => log::info!("stopping execution"),
-            Event::ProgramStarted(info) => log::info!("{} started", info),
-            Event::ProgramDied(info) =>
-                log::info!("{} died", info),
-            Event::ProgramTerminated(info) =>
-                log::info!("{} terminated", info),
-            Event::ProgramKilled(info) =>
-                log::info!("{} killed", info),
-        }
     }
 }
