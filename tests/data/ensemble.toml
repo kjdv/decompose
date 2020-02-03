@@ -1,0 +1,8 @@
+[[program]]
+name = "server"
+argv = ["./target/testrun/bin/http_server", "extra", "arg"]
+env = { FOO= "BAR" }
+
+[[program]]
+name = "proxy"
+argv = ["./target/testrun/bin/http_proxy"]

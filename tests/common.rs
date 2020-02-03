@@ -45,7 +45,7 @@ fn helper_path(name: &str) -> PathBuf {
 }
 
 fn link_helpers() {
-    const HELPERS: [&str; 3] = ["sigterm_intercept", "http_server", "http_proyx"];
+    const HELPERS: [&str; 3] = ["sigterm_intercept", "http_server", "http_proxy"];
 
     let mut target_dir = testrun_dir();
     target_dir.push("bin");
@@ -100,7 +100,7 @@ impl Fixture {
         let mut line = String::new();
         let n = self.reader.read_line(&mut line).expect("no input");
         assert_ne!(0, n);
-        log::debug!("line: {}", line);
+        log::info!("{}", line);
         line
     }
 
@@ -109,11 +109,15 @@ impl Fixture {
         loop {
             let line = self.next_line();
             if re.find(line.as_str()).is_some() {
+                log::debug!("match: {}", line);
+
                 let caps = re.captures(line.as_str()).unwrap();
                 let result: Vec<String> = caps.iter()
                     .map(|c| String::from_str(c.expect("match").as_str()).unwrap())
                     .collect();
                 return result;
+            } else {
+                log::debug!("discard: {}", line);
             }
         }
     }

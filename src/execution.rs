@@ -92,7 +92,7 @@ impl Execution {
     fn stop(&mut self) {
         log::debug!("sending all children the SIGTERM signal");
 
-        for prog in &mut self.programs {
+        while let Some(mut prog) = self.programs.pop() {
             prog.program.terminate()
                 .unwrap_or_else(|e| {
                     log::warn!("failed to terminate {}: {:?}", prog.info, e);
@@ -114,8 +114,6 @@ impl Execution {
                 }
             }
         }
-
-        self.programs.clear();
     }
 
     fn create_program(cfg: &config::Program) -> Result<Popen> {
