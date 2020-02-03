@@ -4,7 +4,7 @@ Service orchestration not depending on docker, optimised for dev.
 
 ## Milestones
 
-- [ ] Start one program provided by toml config
+- [x] Start one program provided by toml config
 - [ ] Start multiple programs provided by toml config
 - [ ] Redirect output
 - [ ] Selectively start
