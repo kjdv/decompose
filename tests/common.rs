@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use nix::sys::signal::{kill, SIGTERM};
 
 static LOG_INIT: Once = Once::new();
+static BIN_INIT: Once = Once::new();
 
 fn bin_root() -> PathBuf {
     let mut path = std::env::current_exe().expect("current exe");
@@ -28,6 +29,38 @@ fn data_file(name: &str) -> PathBuf {
     path
 }
 
+fn testrun_dir() -> PathBuf {
+    let root = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR");
+    let mut path = PathBuf::from(root);
+    path.push("target");
+    path.push("testrun");
+    path
+}
+
+fn helper_path(name: &str) -> PathBuf {
+    let mut path = bin_root();
+    path.push("examples");
+    path.push(name);
+    path
+}
+
+fn link_helpers() {
+    const HELPERS: [&str; 3] = ["sigterm_intercept", "http_server", "http_proyx"];
+
+    let mut target_dir = testrun_dir();
+    target_dir.push("bin");
+    std::fs::create_dir_all(target_dir).expect("mkdir");
+
+    for helper in &HELPERS {
+        let source = helper_path(helper);
+        let mut target = testrun_dir();
+        target.push("bin");
+        target.push(helper);
+        let _ = std::fs::remove_file(&target);
+        std::os::unix::fs::symlink(source, target).expect("symlink");
+    }
+}
+
 pub struct Fixture {
     process: subprocess::Popen,
     reader: std::io::BufReader<std::fs::File>,
@@ -38,6 +71,7 @@ impl Fixture {
         LOG_INIT.call_once(|| {
             simple_logger::init_with_level(log::Level::Debug).expect("log init");
         });
+        BIN_INIT.call_once(link_helpers);
 
         let mut popen = subprocess::Exec::cmd(decompose_exe().as_os_str())
             .arg("--debug")

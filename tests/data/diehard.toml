@@ -2,4 +2,4 @@ terminate_timeout = 0.01
 
 [[program]]
 name = "diehard"
-argv = ["./target/debug/examples/sigterm_intercept", "--diehard"]
+argv = ["./target/testrun/bin/sigterm_intercept", "--diehard"]
