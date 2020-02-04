@@ -69,7 +69,7 @@ pub struct Fixture {
 impl Fixture {
     pub fn new(config: &str) -> Fixture {
         LOG_INIT.call_once(|| {
-            simple_logger::init_with_level(log::Level::Debug).expect("log init");
+            simple_logger::init_with_level(log::Level::Info).expect("log init");
         });
         BIN_INIT.call_once(link_helpers);
 
@@ -79,10 +79,6 @@ impl Fixture {
             .stdout(subprocess::Redirection::Pipe)
             .popen()
             .expect("popen");
-
-        let dur = std::time::Duration::from_millis(100);
-        log::info!("waiting {:?} to let everything start", dur);
-        std::thread::sleep(dur); // todo: find a better way to deal with these race conditions
 
         let reader = std::io::BufReader::new(popen.stdout.take().unwrap());
         Fixture {
@@ -123,6 +119,10 @@ impl Fixture {
     }
 
     pub fn expect_start(&mut self) {
+        let dur = std::time::Duration::from_millis(100);
+        log::info!("waiting {:?} to let everything start", dur);
+        std::thread::sleep(dur); // todo: find a better way to deal with these race conditions
+
         self.expect_line(r"\[decompose::execution\] starting execution");
     }
 
@@ -174,4 +174,13 @@ impl std::fmt::Display for ProgramInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "{}:{}", self.name, self.pid)
     }
+}
+
+pub fn http_get(port: u16, path: &str) -> (u16, String) {
+    let url = format!("http://127.0.0.1:{}/{}", port, path);
+    let res = reqwest::blocking::get(&url).expect("http get");
+    let status = res.status().as_u16();
+    let body = res.text().unwrap();
+
+    (status, body)
 }

@@ -15,6 +15,8 @@ fn can_start_and_stop() {
 #[test]
 fn stop_if_all_programs_dies() {
     let mut f = Fixture::new("single.toml");
+    f.expect_start();
+
     let prog = f.expect_program_starts();
     f.terminate_program(&prog);
     f.expect_program_dies(&prog);
@@ -24,6 +26,8 @@ fn stop_if_all_programs_dies() {
 #[test]
 fn program_is_killed_if_it_catches_sigterm() {
     let mut f = Fixture::new("diehard.toml");
+    f.expect_start();
+    
     let prog = f.expect_program_starts();
     f.stop();
     f.expect_program_is_killed(&prog);

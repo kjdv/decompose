@@ -1,9 +1,9 @@
 [[program]]
 name = "server"
-argv = ["./testrun/bin/http_server", "extra", "arg"]
+argv = ["./bin/http_server", "extra", "arg", "--address", "127.0.0.1:9090"]
 env = { FOO= "BAR" }
-cwd = "./target"
+cwd = "./target/testrun"
 
 [[program]]
 name = "proxy"
-argv = ["./target/testrun/bin/http_proxy"]
+argv = ["./target/testrun/bin/http_proxy", "--address", "127.0.0.1:9091", "--forward", "127.0.0.1:9090"]
