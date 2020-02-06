@@ -96,7 +96,7 @@ impl Fixture {
         let mut line = String::new();
         let n = self.reader.read_line(&mut line).expect("no input");
         assert_ne!(0, n);
-        log::info!("{}", line);
+        print!("{}", line);
         line
     }
 

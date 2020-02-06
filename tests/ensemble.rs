@@ -13,6 +13,10 @@ fn starts_and_stops_in_the_right_order() {
     let proxy = f.expect_program_starts();
     assert_eq!("proxy", proxy.name);
 
+    let (status, body) = http_get(9091, "hello");
+    assert_eq!(200, status);
+    assert_eq!("hello!\n", body);
+
     f.stop();
 
     f.expect_program_terminates(&proxy);
