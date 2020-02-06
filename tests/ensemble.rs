@@ -28,7 +28,11 @@ fn sets_args() {
     let (status, body) = http_get(9090, "args?idx=1");
     assert_eq!(200, status);
     assert_eq!("extra", body);
+
+    f.stop();
+    f.expect_stop();
 }
+
 
 #[test]
 fn sets_env() {
