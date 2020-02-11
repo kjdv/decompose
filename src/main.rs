@@ -6,8 +6,18 @@ use std::error::Error;
 
 mod config;
 mod execution;
+mod output;
+
+fn main() -> Result<(), Box<dyn Error>> {
+    do_main()
+        .map_err(|e| {
+            log::error!("{:?}", e);
+            e
+        })
+}
 
 fn do_main() -> Result<(), Box<dyn Error>> {
+    let default_od = default_outdir();
     let args = clap::App::new("decompose")
         .author("Klaas de Vries")
         .about("service orchestration for devs")
@@ -22,6 +32,13 @@ fn do_main() -> Result<(), Box<dyn Error>> {
                 .help("configuration file, in toml format")
                 .required(true)
                 .index(1),
+        )
+        .arg(
+            clap::Arg::with_name("outdir")
+                .help("output directory")
+                .default_value(default_od.as_str())
+                .short("o")
+                .long("outdir")
         )
         .get_matches();
 
@@ -44,10 +61,9 @@ fn do_main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
-    do_main()
-        .map_err(|e| {
-            log::error!("{:?}", e);
-            e
-        })
+fn default_outdir() -> String {
+    let mut cwd = std::env::current_dir().unwrap();
+    cwd.push(".decompose");
+    let cwd = cwd.into_os_string();
+    cwd.into_string().unwrap()
 }
