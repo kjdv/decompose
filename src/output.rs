@@ -33,21 +33,11 @@ impl OutputFileFactory {
         Ok(OutputFileFactory{outdir})
     }
 
-    fn open(&self, filename: &str) -> Result<fs::File> {
+    pub fn open(&self, filename: &str) -> Result<fs::File> {
         let mut path = self.outdir.clone();
         path.push(filename);
         let f = fs::File::create(path)?;
         Ok(f)
-    }
-
-    pub fn open_stdout(&self, program: &execution::ProgramInfo) -> Result<fs::File> {
-        let name = format!("{}.stdout", program.name);
-        self.open(name.as_str())
-    }
-
-    pub fn open_stderr(&self, program: &execution::ProgramInfo) -> Result<fs::File> {
-        let name = format!("{}.stderr", program.name);
-        self.open(name.as_str())
     }
 }
 

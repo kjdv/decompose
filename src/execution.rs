@@ -3,7 +3,7 @@ extern crate string_error;
 
 use log;
 use std::error::Error;
-use subprocess::{Popen, Exec};
+use subprocess::{Popen, Exec, Redirection};
 use signal_hook::{iterator::Signals, SIGINT, SIGTERM, SIGCHLD};
 
 use super::*;
@@ -16,7 +16,7 @@ pub struct Execution {
 }
 
 impl Execution {
-    pub fn from_config(cfg: config::System) -> Result<Execution> {
+    pub fn from_config(cfg: config::System, output: &output::OutputFileFactory) -> Result<Execution> {
         log::info!("starting execution");
         let mut execution = Execution{
             programs: Vec::new(),
@@ -25,7 +25,7 @@ impl Execution {
 
         for p in &cfg.program {
             if p.enabled {
-                match Execution::create_program(&p) {
+                match Execution::create_program(&p, &output) {
                     Ok(popen) => {
                         let pid = popen.pid()
                             .ok_or_else(|| string_error::new_err("could not obtain pid"))?;
@@ -116,7 +116,7 @@ impl Execution {
         }
     }
 
-    fn create_program(cfg: &config::Program) -> Result<Popen> {
+    fn create_program(cfg: &config::Program, output: &output::OutputFileFactory) -> Result<Popen> {
         assert!(!cfg.argv.is_empty());
         assert!(cfg.enabled);
 
@@ -124,10 +124,14 @@ impl Execution {
             .map(|(k, v)| (k.clone(),v.clone()))
             .collect();
 
+        let stdout = output.open(cfg.name.as_str())?;
+       
         Exec::cmd(&cfg.argv[0])
             .args(&cfg.argv.as_slice()[1..])
             .env_extend(&env)
             .cwd(&cfg.cwd)
+            .stdout(stdout)
+            .stderr(Redirection::Merge)
             .popen()
             .map_err(|e| e.into())
     }

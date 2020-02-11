@@ -6,7 +6,7 @@ Service orchestration not depending on docker, optimised for dev.
 
 - [x] Start one program provided by toml config
 - [x] Start multiple programs provided by toml config
-- [ ] Redirect output
+- [x] Redirect output
 - [ ] separate start from ready, by open port, stdout regex
 - [ ] Selectively start
 - [ ] Provisioning: separate build and run steps

@@ -55,7 +55,8 @@ fn do_main() -> Result<(), Box<dyn Error>> {
     let sys = config::System::from_file(args.value_of("config").unwrap())?;
     log::info!("system is {:?}", sys);
 
-    let mut exec = execution::Execution::from_config(sys)?;
+    let output_factory = output::OutputFileFactory::new(args.value_of("outdir").unwrap())?;
+    let mut exec = execution::Execution::from_config(sys, &output_factory)?;
     exec.wait();
 
     Ok(())
