@@ -68,11 +68,19 @@ mod tests {
         let symlink = symlink.as_path();
         assert_eq!(latest.parent().unwrap(), symlink.parent().unwrap());
 
-        let re = regex::Regex::new(r#"[0-9]+-[0-9]+-[0-9]+T[0-9]+:[0-9]+:[0-9]+\.[0-9]+"#)
+        let re = regex::Regex::new(r#"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.([0-9]+)"#)
             .unwrap();
-        assert!(re.is_match(
-            symlink.to_path_buf().file_name().unwrap().to_str().unwrap()
-        ));
+
+        // below... rust gets crazy
+        let symlink = symlink.to_path_buf();
+        let file_name = symlink
+            .file_name()
+            .and_then(|f| f.to_str())
+            .unwrap();
+        let caps = re.captures(file_name).unwrap();
+        let pid = caps.get(1).unwrap().as_str();
+        let pid = pid.parse::<u32>().unwrap();
+        assert_eq!(std::process::id(), pid);
     }
 
     #[test]
