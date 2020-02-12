@@ -41,8 +41,58 @@ impl OutputFileFactory {
     }
 }
 
-impl Drop for OutputFileFactory {
-    fn drop(&mut self) {
+#[cfg(test)]
+mod tests {
+    use super::*;
+    extern crate tempfile;
 
+    use std::io::{Read, Write};
+    use tempfile::Builder;
+    use std::path;
+
+    fn root() -> tempfile::TempDir {
+        Builder::new()
+            .tempdir()
+            .unwrap()
+    }
+
+    #[test]
+    fn creates_dirs() {
+        let r = root();
+        let _ = OutputFileFactory::new(&r.path().to_str().unwrap());
+
+        let mut latest = r.into_path().to_path_buf();
+        latest.push("latest");
+        assert!(latest.is_dir());
+
+        let symlink = fs::read_link(&latest).unwrap();
+        let symlink = symlink.as_path();
+        assert_eq!(latest.parent().unwrap(), symlink.parent().unwrap());
+
+        let re = regex::Regex::new(r#"[0-9]+-[0-9]+-[0-9]+T[0-9]+:[0-9]+:[0-9]+\.[0-9]+"#)
+            .unwrap();
+        assert!(re.is_match(
+            symlink.to_path_buf().file_name().unwrap().to_str().unwrap()
+        ));
+    }
+
+    fn writes_content() {
+        let r = root();
+        let output = OutputFileFactory::new(&r.path().to_str().unwrap()).unwrap();
+
+        {
+            let mut f = output.open("test").unwrap();
+            f.write_all(b"hello!\n").unwrap();
+        }
+
+        let mut p = r.into_path().to_path_buf();
+        p.push("latest");
+        p.push("test");
+
+        let mut f = fs::File::open(p).unwrap();
+        let mut buf = String::new();
+        f.read_to_string(&mut buf).unwrap();
+
+        assert_eq!("hello\n!", buf.as_str());
     }
 }
