@@ -23,8 +23,8 @@ impl OutputFileFactory {
         outdir.push(dirname);
 
         fs::create_dir_all(&outdir)?;
-    
-        let mut latest = outdir_root_buf.clone();
+
+        let mut latest = outdir_root_buf;
         latest.push("latest");
 
         let _ = fs::remove_file(&latest);
@@ -48,7 +48,6 @@ mod tests {
 
     use std::io::{Read, Write};
     use tempfile::Builder;
-    use std::path;
 
     fn root() -> tempfile::TempDir {
         Builder::new()
@@ -61,7 +60,7 @@ mod tests {
         let r = root();
         let _ = OutputFileFactory::new(&r.path().to_str().unwrap());
 
-        let mut latest = r.into_path().to_path_buf();
+        let mut latest = r.into_path();
         latest.push("latest");
         assert!(latest.is_dir());
 
@@ -76,6 +75,7 @@ mod tests {
         ));
     }
 
+    #[test]
     fn writes_content() {
         let r = root();
         let output = OutputFileFactory::new(&r.path().to_str().unwrap()).unwrap();
@@ -85,7 +85,7 @@ mod tests {
             f.write_all(b"hello!\n").unwrap();
         }
 
-        let mut p = r.into_path().to_path_buf();
+        let mut p = r.into_path();
         p.push("latest");
         p.push("test");
 
@@ -93,6 +93,6 @@ mod tests {
         let mut buf = String::new();
         f.read_to_string(&mut buf).unwrap();
 
-        assert_eq!("hello\n!", buf.as_str());
+        assert_eq!("hello!\n", buf.as_str());
     }
 }
