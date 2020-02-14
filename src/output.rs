@@ -72,14 +72,16 @@ mod tests {
             .unwrap();
 
         // below... rust gets crazy
-        let symlink = symlink.to_path_buf();
-        let file_name = symlink
+        let pid = symlink
+            .to_path_buf()
             .file_name()
             .and_then(|f| f.to_str())
+            .and_then(|f| re.captures(f))
+            .and_then(|cs| cs.get(1))
+            .map(|p| p.as_str())
+            .and_then(|p| p.parse::<u32>().ok())
             .unwrap();
-        let caps = re.captures(file_name).unwrap();
-        let pid = caps.get(1).unwrap().as_str();
-        let pid = pid.parse::<u32>().unwrap();
+
         assert_eq!(std::process::id(), pid);
     }
 
