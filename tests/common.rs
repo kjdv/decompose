@@ -1,9 +1,9 @@
-use std::sync::Once;
-use std::str::FromStr;
-use std::io::BufRead;
-use subprocess;
-use std::path::PathBuf;
 use nix::sys::signal::{kill, SIGTERM};
+use std::io::BufRead;
+use std::path::PathBuf;
+use std::str::FromStr;
+use std::sync::Once;
+use subprocess;
 
 static LOG_INIT: Once = Once::new();
 static BIN_INIT: Once = Once::new();
@@ -100,7 +100,8 @@ impl Fixture {
         line
     }
 
-    fn expect_line(&mut self, re: &str) -> Vec<String> { // returns captures
+    fn expect_line(&mut self, re: &str) -> Vec<String> {
+        // returns captures
         let re = regex::Regex::new(re).expect("valid regex");
         loop {
             let line = self.next_line();
@@ -108,7 +109,8 @@ impl Fixture {
                 log::debug!("match: {}", line);
 
                 let caps = re.captures(line.as_str()).unwrap();
-                let result: Vec<String> = caps.iter()
+                let result: Vec<String> = caps
+                    .iter()
                     .map(|c| String::from_str(c.expect("match").as_str()).unwrap())
                     .collect();
                 return result;
@@ -131,7 +133,8 @@ impl Fixture {
     }
 
     pub fn expect_program_starts(&mut self) -> ProgramInfo {
-        let caps = self.expect_line(r"\[decompose::execution\] ([a-zA-Z][a-zA-Z0-9]+):([0-9]+) started");
+        let caps =
+            self.expect_line(r"\[decompose::execution\] ([a-zA-Z][a-zA-Z0-9]+):([0-9]+) started");
         ProgramInfo {
             name: caps.get(1).unwrap().to_string(),
             pid: caps.get(2).unwrap().to_string().parse().unwrap(),

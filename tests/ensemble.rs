@@ -37,7 +37,6 @@ fn sets_args() {
     f.expect_stop();
 }
 
-
 #[test]
 fn sets_env() {
     let mut f = Fixture::new("ensemble.toml");

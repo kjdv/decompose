@@ -1,11 +1,10 @@
 extern crate chrono;
-use std::path::PathBuf;
 use std::fs;
+use std::path::PathBuf;
 
 use super::*;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
-
 
 pub struct OutputFileFactory {
     outdir: PathBuf,
@@ -30,7 +29,7 @@ impl OutputFileFactory {
         let _ = fs::remove_file(&latest);
         std::os::unix::fs::symlink(&outdir, latest)?;
 
-        Ok(OutputFileFactory{outdir})
+        Ok(OutputFileFactory { outdir })
     }
 
     pub fn open(&self, filename: &str) -> Result<fs::File> {
@@ -50,9 +49,7 @@ mod tests {
     use tempfile::Builder;
 
     fn root() -> tempfile::TempDir {
-        Builder::new()
-            .tempdir()
-            .unwrap()
+        Builder::new().tempdir().unwrap()
     }
 
     #[test]
@@ -68,8 +65,9 @@ mod tests {
         let symlink = symlink.as_path();
         assert_eq!(latest.parent().unwrap(), symlink.parent().unwrap());
 
-        let re = regex::Regex::new(r#"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.([0-9]+)"#)
-            .unwrap();
+        let re =
+            regex::Regex::new(r#"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.([0-9]+)"#)
+                .unwrap();
 
         // below... rust gets crazy
         let pid = symlink

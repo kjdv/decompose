@@ -1,6 +1,6 @@
-extern crate rouille;
-extern crate reqwest;
 extern crate clap;
+extern crate reqwest;
+extern crate rouille;
 
 fn main() {
     let args = clap::App::new("http_server")
@@ -11,19 +11,19 @@ fn main() {
                 .help("address to bind to")
                 .short("a")
                 .long("address")
-                .default_value("127.0.0.1:8081")
+                .default_value("127.0.0.1:8081"),
         )
         .arg(
             clap::Arg::with_name("forward")
                 .help("address to forwad to")
                 .short("f")
                 .long("forward")
-                .default_value("127.0.0.1:8080")
+                .default_value("127.0.0.1:8080"),
         )
         .arg(
             clap::Arg::with_name("extra")
                 .help("you can add extra argumens, they will be ignored")
-                .multiple(true)
+                .multiple(true),
         )
         .get_matches();
 

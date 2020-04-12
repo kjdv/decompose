@@ -1,10 +1,10 @@
-extern crate subprocess;
 extern crate string_error;
+extern crate subprocess;
 
 use log;
+use signal_hook::{iterator::Signals, SIGCHLD, SIGINT, SIGTERM};
 use std::error::Error;
-use subprocess::{Popen, Exec, Redirection};
-use signal_hook::{iterator::Signals, SIGINT, SIGTERM, SIGCHLD};
+use subprocess::{Exec, Popen, Redirection};
 
 use super::*;
 
@@ -16,9 +16,12 @@ pub struct Execution {
 }
 
 impl Execution {
-    pub fn from_config(cfg: config::System, output: &output::OutputFileFactory) -> Result<Execution> {
+    pub fn from_config(
+        cfg: config::System,
+        output: &output::OutputFileFactory,
+    ) -> Result<Execution> {
         log::info!("starting execution");
-        let mut execution = Execution{
+        let mut execution = Execution {
             programs: Vec::new(),
             terminate_timeout: std::time::Duration::from_secs_f64(cfg.terminate_timeout),
         };
@@ -27,9 +30,10 @@ impl Execution {
             if p.enabled {
                 match Execution::create_program(&p, &output) {
                     Ok(popen) => {
-                        let pid = popen.pid()
+                        let pid = popen
+                            .pid()
                             .ok_or_else(|| string_error::new_err("could not obtain pid"))?;
-                        let prog = Program{
+                        let prog = Program {
                             info: ProgramInfo {
                                 name: p.name.clone(),
                                 pid,
@@ -39,8 +43,8 @@ impl Execution {
 
                         log::info!("{} started", prog.info);
                         execution.programs.push(prog)
-                    },
-                    Err(err) => return Err(err)
+                    }
+                    Err(err) => return Err(err),
                 }
             } else {
                 log::info!("program {:?} is disabled, skipping", p.name);
@@ -71,7 +75,6 @@ impl Execution {
                 return;
             }
         }
-
     }
 
     fn check_alive(&mut self) -> bool {
@@ -83,7 +86,9 @@ impl Execution {
                     log::info!("{} died", prog.info);
                     self.programs.remove(idx);
                 }
-                None => {idx += 1;},
+                None => {
+                    idx += 1;
+                }
             }
         }
         !self.programs.is_empty()
@@ -93,23 +98,24 @@ impl Execution {
         log::debug!("sending all children the SIGTERM signal");
 
         while let Some(mut prog) = self.programs.pop() {
-            prog.program.terminate()
-                .unwrap_or_else(|e| {
-                    log::warn!("failed to terminate {}: {:?}", prog.info, e);
+            prog.program.terminate().unwrap_or_else(|e| {
+                log::warn!("failed to terminate {}: {:?}", prog.info, e);
             });
 
             match prog.program.wait_timeout(self.terminate_timeout) {
                 Err(e) => log::warn!("failed to wait: {:?}", e),
                 Ok(Some(_)) => {
                     log::info!("{} terminated", prog.info);
-                },
+                }
                 Ok(None) => {
                     log::warn!("timeout exceeded, killing {}", prog.info);
                     match prog.program.kill() {
                         Ok(_) => {
                             log::info!("{} killed", prog.info);
-                        },
-                        Err(e) => {log::warn!("failed to kill {}: {:?}", prog.info, e);}
+                        }
+                        Err(e) => {
+                            log::warn!("failed to kill {}: {:?}", prog.info, e);
+                        }
                     }
                 }
             }
@@ -120,12 +126,14 @@ impl Execution {
         assert!(!cfg.argv.is_empty());
         assert!(cfg.enabled);
 
-        let env: Vec<(String, String)>= cfg.env.iter()
-            .map(|(k, v)| (k.clone(),v.clone()))
+        let env: Vec<(String, String)> = cfg
+            .env
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
 
         let stdout = output.open(cfg.name.as_str())?;
-       
+
         Exec::cmd(&cfg.argv[0])
             .args(&cfg.argv.as_slice()[1..])
             .env_extend(&env)

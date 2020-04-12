@@ -27,7 +27,7 @@ fn stop_if_all_programs_dies() {
 fn program_is_killed_if_it_catches_sigterm() {
     let mut f = Fixture::new("diehard.toml");
     f.expect_start();
-    
+
     let prog = f.expect_program_starts();
     f.stop();
     f.expect_program_is_killed(&prog);

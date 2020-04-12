@@ -9,11 +9,10 @@ mod execution;
 mod output;
 
 fn main() -> Result<(), Box<dyn Error>> {
-    do_main()
-        .map_err(|e| {
-            log::error!("{:?}", e);
-            e
-        })
+    do_main().map_err(|e| {
+        log::error!("{:?}", e);
+        e
+    })
 }
 
 fn do_main() -> Result<(), Box<dyn Error>> {
@@ -38,7 +37,7 @@ fn do_main() -> Result<(), Box<dyn Error>> {
                 .help("output directory")
                 .default_value(default_od.as_str())
                 .short("o")
-                .long("outdir")
+                .long("outdir"),
         )
         .get_matches();
 

@@ -11,12 +11,12 @@ fn main() {
                 .help("address to bind to")
                 .short("a")
                 .long("address")
-                .default_value("127.0.0.1:8080")
+                .default_value("127.0.0.1:8080"),
         )
         .arg(
             clap::Arg::with_name("extra")
                 .help("you can add extra argumens, they will be ignored")
-                .multiple(true)
+                .multiple(true),
         )
         .get_matches();
 

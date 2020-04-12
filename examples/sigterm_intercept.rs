@@ -1,6 +1,6 @@
+use clap;
 use signal_hook::{iterator::Signals, SIGINT, SIGTERM};
 use std::error::Error;
-use clap;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args = clap::App::new("signal interceptor")

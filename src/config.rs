@@ -75,19 +75,16 @@ mod tests {
     use tempfile::Builder;
 
     fn write_file(content: &str) -> tempfile::NamedTempFile {
-        let mut file = Builder::new()
-            .suffix(".toml")
-            .tempfile()
-            .unwrap();
-        file.as_file_mut()
-            .write_all(content.as_bytes()).unwrap();
+        let mut file = Builder::new().suffix(".toml").tempfile().unwrap();
+        file.as_file_mut().write_all(content.as_bytes()).unwrap();
         file.seek(SeekFrom::Start(0)).unwrap();
         file
     }
 
     #[test]
     fn test_read() {
-        let file = write_file(r#"
+        let file = write_file(
+            r#"
             terminate_timeout = 0.5
 
             [[program]]
@@ -129,7 +126,8 @@ mod tests {
 
     #[test]
     fn test_optional_values_give_defaults() {
-        let file = write_file(r#"
+        let file = write_file(
+            r#"
             [[program]]
             name = "prog"
             argv = ["abc"]
@@ -149,7 +147,8 @@ mod tests {
 
     #[test]
     fn test_fail_if_mandatory_are_absent() {
-        let file = write_file(r#"
+        let file = write_file(
+            r#"
             [[program]]
             argv = ["abc"]
         "#,
@@ -158,7 +157,8 @@ mod tests {
         let res = System::from_file(file.path().to_str().unwrap());
         res.unwrap_err();
 
-        let file = write_file(r#"
+        let file = write_file(
+            r#"
             [[program]]
             name = "prog"
         "#,
@@ -170,7 +170,8 @@ mod tests {
 
     #[test]
     fn test_fail_unless_exec_is_given() {
-        let file = write_file(r#"
+        let file = write_file(
+            r#"
             [[program]]
             name = "prog"
             argv = []
