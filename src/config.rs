@@ -29,6 +29,17 @@ pub struct Program {
 
     #[serde(default = "default_enabled")]
     pub enabled: bool,
+
+    #[serde(default = "default_ready_signal")]
+    pub ready: ReadySignal,
+}
+
+#[derive(Deserialize, Debug, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum ReadySignal {
+    Nothing,
+    Manual,
+    Port(u16),
 }
 
 fn default_cwd() -> String {
@@ -43,6 +54,10 @@ fn default_enabled() -> bool {
 
 fn default_terminate_timeout() -> f64 {
     1.0
+}
+
+fn default_ready_signal() -> ReadySignal {
+    ReadySignal::Nothing
 }
 
 impl System {
@@ -143,6 +158,7 @@ mod tests {
         assert_eq!(0, prog.env.len());
         assert_eq!(default_cwd(), prog.cwd);
         assert_eq!(true, prog.enabled);
+        assert_eq!(ReadySignal::Nothing, prog.ready);
     }
 
     #[test]
@@ -180,5 +196,38 @@ mod tests {
 
         let res = System::from_file(file.path().to_str().unwrap());
         res.unwrap_err();
+    }
+
+    #[test]
+    fn test_ready_signals() {
+        let file = write_file(
+            r#"
+            [[program]]
+            name = "default"
+            argv = ["foo"]
+
+            [[program]]
+            name = "port"
+            argv = ["foo"]
+            ready = {port = 123}
+
+            [[program]]
+            name = "nothing"
+            argv = ["foo"]
+            ready = {nothing={}}
+
+            [[program]]
+            name = "manual"
+            argv = ["foo"]
+            ready = {manual={}}
+            "#
+        );
+
+        let res = System::from_file(file.path().to_str().unwrap()).unwrap();
+
+        assert_eq!(ReadySignal::Nothing, res.program[0].ready);
+        assert_eq!(ReadySignal::Port(123), res.program[1].ready);
+        assert_eq!(ReadySignal::Nothing, res.program[2].ready);
+        assert_eq!(ReadySignal::Manual, res.program[3].ready);
     }
 }
