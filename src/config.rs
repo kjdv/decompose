@@ -3,6 +3,7 @@ extern crate serde_any;
 
 use serde::Deserialize;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::error::Error;
 use std::vec::Vec;
 
@@ -16,7 +17,7 @@ pub struct System {
     pub terminate_timeout: f64,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct Program {
     pub name: String,
     pub argv: Vec<String>,
@@ -32,9 +33,12 @@ pub struct Program {
 
     #[serde(default = "default_ready_signal")]
     pub ready: ReadySignal,
+
+    #[serde(default = "default_depends")]
+    pub depends: Vec<String>,
 }
 
-#[derive(Deserialize, Debug, PartialEq)]
+#[derive(Deserialize, Debug, PartialEq, Clone)]
 #[serde(rename_all = "lowercase")]
 pub enum ReadySignal {
     Nothing,
@@ -60,6 +64,10 @@ fn default_ready_signal() -> ReadySignal {
     ReadySignal::Nothing
 }
 
+fn default_depends() -> Vec<String> {
+    Vec::new()
+}
+
 impl System {
     pub fn from_file(filename: &str) -> Result<System> {
         serde_any::from_file(filename)
@@ -71,12 +79,26 @@ impl System {
     }
 
     fn validate(sys: System) -> Result<System> {
+        let mut found_starting_point = false;
+        let mut names = HashSet::new();
         for prog in &sys.program {
             if prog.argv.is_empty() {
                 let msg = format!("need at least one argv argument for {:?}", prog.name);
                 return Err(msg.into());
             }
+            if prog.depends.is_empty() {
+                found_starting_point = true;
+            }
+            if !names.insert(prog.name.clone()) {
+                let msg = format!("duplicate program name {:?}", prog.name);
+                return Err(msg.into());
+            }
         }
+
+        if !found_starting_point {
+            return Err(string_error::new_err("No valid entry point (with empty dependency list) found"));
+        }
+
         Ok(sys)
     }
 }
@@ -199,6 +221,39 @@ mod tests {
     }
 
     #[test]
+    fn test_fail_unless_there_is_a_starting_point() {
+        let file = write_file(
+            r#"
+            [[program]]
+            name = "prog"
+            argv = ["foo"]
+            depends = ["prog"]
+        "#,
+        );
+
+        let res = System::from_file(file.path().to_str().unwrap());
+        res.unwrap_err();
+    }
+
+    #[test]
+    fn test_fail_on_duplicate_names() {
+        let file = write_file(
+            r#"
+            [[program]]
+            name = "prog"
+            argv = ["foo"]
+
+            [[program]]
+            name = "prog"
+            argv = ["foo"]
+        "#,
+        );
+
+        let res = System::from_file(file.path().to_str().unwrap());
+        res.unwrap_err();
+    }
+
+    #[test]
     fn test_ready_signals() {
         let file = write_file(
             r#"
@@ -229,5 +284,26 @@ mod tests {
         assert_eq!(ReadySignal::Port(123), res.program[1].ready);
         assert_eq!(ReadySignal::Nothing, res.program[2].ready);
         assert_eq!(ReadySignal::Manual, res.program[3].ready);
+    }
+
+    #[test]
+    fn test_depends() {
+        let file = write_file(
+            r#"
+            [[program]]
+            name = "default"
+            argv = ["foo"]
+
+            [[program]]
+            name = "port"
+            argv = ["foo"]
+            depends = ["default"]
+            "#
+        );
+
+        let res = System::from_file(file.path().to_str().unwrap()).unwrap();
+
+        assert!(res.program[0].depends.is_empty());
+        assert_eq!(vec!["default"], res.program[1].depends);
     }
 }

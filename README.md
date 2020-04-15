@@ -10,3 +10,5 @@ Service orchestration not depending on docker, optimised for dev.
 - [ ] separate start from ready, by open port, stdout regex
 - [ ] Selectively start
 - [ ] Provisioning: separate build and run steps
+- [ ] Timeout on hanging starts
+- [ ] Ordered destruction

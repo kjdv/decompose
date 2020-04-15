@@ -7,6 +7,7 @@ use std::error::Error;
 mod config;
 mod execution;
 mod output;
+mod executionlist;
 
 fn main() -> Result<(), Box<dyn Error>> {
     do_main().map_err(|e| {
@@ -55,7 +56,7 @@ fn do_main() -> Result<(), Box<dyn Error>> {
     log::info!("system is {:?}", sys);
 
     let output_factory = output::OutputFileFactory::new(args.value_of("outdir").unwrap())?;
-    let mut exec = execution::Execution::from_config(sys, &output_factory)?;
+    let mut exec = execution::Execution::from_config(sys, output_factory)?;
     exec.wait();
 
     Ok(())

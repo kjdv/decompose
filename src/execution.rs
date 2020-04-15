@@ -18,38 +18,21 @@ pub struct Execution {
 impl Execution {
     pub fn from_config(
         cfg: config::System,
-        output: &output::OutputFileFactory,
+        output: output::OutputFileFactory,
     ) -> Result<Execution> {
         log::info!("starting execution");
-        let mut execution = Execution {
-            programs: Vec::new(),
+
+        let mut list = executionlist::ExecutionList::from_system(&cfg, output);
+
+        let sleep_time = std::time::Duration::from_millis(10);
+        while !list.poll()? {
+            std::thread::sleep(sleep_time);
+        }
+
+        let execution = Execution {
+            programs: list.reap(),
             terminate_timeout: std::time::Duration::from_secs_f64(cfg.terminate_timeout),
         };
-
-        for p in &cfg.program {
-            if p.enabled {
-                match Execution::create_program(&p, &output) {
-                    Ok(popen) => {
-                        let pid = popen
-                            .pid()
-                            .ok_or_else(|| string_error::new_err("could not obtain pid"))?;
-                        let prog = Program {
-                            info: ProgramInfo {
-                                name: p.name.clone(),
-                                pid,
-                            },
-                            program: popen,
-                        };
-
-                        log::info!("{} started", prog.info);
-                        execution.programs.push(prog)
-                    }
-                    Err(err) => return Err(err),
-                }
-            } else {
-                log::info!("program {:?} is disabled, skipping", p.name);
-            }
-        }
 
         Ok(execution)
     }
@@ -121,28 +104,6 @@ impl Execution {
             }
         }
     }
-
-    fn create_program(cfg: &config::Program, output: &output::OutputFileFactory) -> Result<Popen> {
-        assert!(!cfg.argv.is_empty());
-        assert!(cfg.enabled);
-
-        let env: Vec<(String, String)> = cfg
-            .env
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
-
-        let stdout = output.open(cfg.name.as_str())?;
-
-        Exec::cmd(&cfg.argv[0])
-            .args(&cfg.argv.as_slice()[1..])
-            .env_extend(&env)
-            .cwd(&cfg.cwd)
-            .stdout(stdout)
-            .stderr(Redirection::Merge)
-            .popen()
-            .map_err(|e| e.into())
-    }
 }
 
 impl Drop for Execution {
@@ -157,13 +118,64 @@ pub struct ProgramInfo {
     pub pid: u32,
 }
 
-struct Program {
-    info: ProgramInfo,
-    program: Popen,
-}
-
 impl std::fmt::Display for ProgramInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "{}:{}", self.name, self.pid)
     }
+}
+
+pub struct Program {
+    info: ProgramInfo,
+    program: Popen,
+}
+
+impl Program {
+    pub fn from_config(prog: &config::Program, output: &output::OutputFileFactory) -> Result<Program> {
+        create_program(prog, &output)
+            .and_then(|popen|{
+                let pid = popen
+                    .pid()
+                    .ok_or_else(|| string_error::new_err("could not obtain pid"))?;
+                let prog = Program {
+                    info: ProgramInfo {
+                        name: prog.name.clone(),
+                        pid,
+                    },
+                    program: popen,
+                };
+
+                log::info!("{} started", prog.info);
+                Ok(prog)
+            })
+    }
+
+    pub fn is_ready(&self) -> bool {
+        true
+    }
+
+    pub fn info(&self) -> &ProgramInfo {
+        &self.info
+    }
+}
+
+fn create_program(cfg: &config::Program, output: &output::OutputFileFactory) -> Result<Popen> {
+    assert!(!cfg.argv.is_empty());
+    assert!(cfg.enabled);
+
+    let env: Vec<(String, String)> = cfg
+        .env
+        .iter()
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+
+    let stdout = output.open(cfg.name.as_str())?;
+
+    Exec::cmd(&cfg.argv[0])
+        .args(&cfg.argv.as_slice()[1..])
+        .env_extend(&env)
+        .cwd(&cfg.cwd)
+        .stdout(stdout)
+        .stderr(Redirection::Merge)
+        .popen()
+        .map_err(|e| e.into())
 }
