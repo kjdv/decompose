@@ -65,4 +65,73 @@ impl ExecutionList {
 #[cfg(test)]
 mod tests {
     use super::*;
+    extern crate tempfile;
+    use tempfile::Builder;
+
+    fn root() -> tempfile::TempDir {
+        Builder::new().tempdir().unwrap()
+    }
+
+    fn run(toml: &str) -> Vec<execution::Program> {
+        let sys = config::System::from_toml(toml).unwrap();
+
+        let r = root();
+        let output = output::OutputFileFactory::new(&r.path().to_str().unwrap()).unwrap();
+        let mut exelist = ExecutionList::from_system(&sys, output);
+
+        loop {
+            if exelist.poll().unwrap() {
+                return exelist.reap();
+            }
+        }
+    }
+
+    #[test]
+    fn starts_in_dependency_order() {
+        let toml = r#"
+        [[program]]
+        name = "last"
+        argv = ["/bin/ls"]
+        depends = ["middle"]
+
+        [[program]]
+        name = "first"
+        argv = ["/bin/ls"]
+
+        [[program]]
+        name = "middle"
+        argv = ["/bin/ls"]
+        depends = ["first"]
+        "#;
+
+        let progs = run(toml);
+
+        assert_eq!("first", progs[0].info().name);
+        assert_eq!("middle", progs[1].info().name);
+        assert_eq!("last", progs[2].info().name);
+    }
+
+    #[test]
+    fn mutlitple_depends() {
+        let toml = r#"
+        [[program]]
+        name = "last"
+        argv = ["/bin/ls"]
+        depends = ["one", "two"]
+
+        [[program]]
+        name = "one"
+        argv = ["/bin/ls"]
+
+        [[program]]
+        name = "two"
+        argv = ["/bin/ls"]
+        "#;
+
+        let progs = run(toml);
+
+        assert_eq!("one", progs[0].info().name);
+        assert_eq!("two", progs[1].info().name);
+        assert_eq!("last", progs[2].info().name);
+    }
 }

@@ -70,15 +70,22 @@ fn default_depends() -> Vec<String> {
 
 impl System {
     pub fn from_file(filename: &str) -> Result<System> {
-        serde_any::from_file(filename)
-            .map_err(|e| {
-                let e = format!("{:?}", e);
-                e.into()
-            })
-            .and_then(System::validate)
+        let s = serde_any::from_file(filename);
+        System::validate(s)
     }
 
-    fn validate(sys: System) -> Result<System> {
+    pub fn from_toml(toml: &str) -> Result<System> {
+        let s = serde_any::from_str(toml, serde_any::Format::Toml);
+        System::validate(s)
+    }
+
+    fn validate(sys: std::result::Result<System, serde_any::Error>) -> Result<System> {
+        if let Err(e) = sys {
+            let e = format!("{:?}", e);
+            return Err(e.into());
+        }
+        let sys = sys.unwrap();
+
         let mut found_starting_point = false;
         let mut names = HashSet::new();
         for prog in &sys.program {
@@ -106,21 +113,10 @@ impl System {
 #[cfg(test)]
 mod tests {
     use super::*;
-    extern crate tempfile;
-
-    use std::io::{Seek, SeekFrom, Write};
-    use tempfile::Builder;
-
-    fn write_file(content: &str) -> tempfile::NamedTempFile {
-        let mut file = Builder::new().suffix(".toml").tempfile().unwrap();
-        file.as_file_mut().write_all(content.as_bytes()).unwrap();
-        file.seek(SeekFrom::Start(0)).unwrap();
-        file
-    }
 
     #[test]
     fn test_read() {
-        let file = write_file(
+        let toml =
             r#"
             terminate_timeout = 0.5
 
@@ -137,9 +133,9 @@ mod tests {
             env = {}
             cwd = "."
             enabled = false
-        "#,
-        );
-        let system = System::from_file(file.path().to_str().unwrap()).unwrap();
+        "#;
+
+        let system = System::from_toml(toml).unwrap();
 
         assert!((system.terminate_timeout - 0.5).abs() < 0.001);
 
@@ -163,15 +159,14 @@ mod tests {
 
     #[test]
     fn test_optional_values_give_defaults() {
-        let file = write_file(
+        let toml =
             r#"
             [[program]]
             name = "prog"
             argv = ["abc"]
-        "#,
-        );
+        "#;
 
-        let system = System::from_file(file.path().to_str().unwrap()).unwrap();
+        let system = System::from_toml(toml).unwrap();
 
         assert!((system.terminate_timeout - 1.0).abs() < 0.001);
 
@@ -185,59 +180,55 @@ mod tests {
 
     #[test]
     fn test_fail_if_mandatory_are_absent() {
-        let file = write_file(
+        let toml =
             r#"
             [[program]]
             argv = ["abc"]
-        "#,
-        );
+        "#;
 
-        let res = System::from_file(file.path().to_str().unwrap());
+        let res = System::from_toml(toml);
         res.unwrap_err();
 
-        let file = write_file(
+        let toml =
             r#"
             [[program]]
             name = "prog"
-        "#,
-        );
+        "#;
 
-        let res = System::from_file(file.path().to_str().unwrap());
+        let res = System::from_toml(toml);
         res.unwrap_err();
     }
 
     #[test]
     fn test_fail_unless_exec_is_given() {
-        let file = write_file(
+        let toml =
             r#"
             [[program]]
             name = "prog"
             argv = []
-        "#,
-        );
+        "#;
 
-        let res = System::from_file(file.path().to_str().unwrap());
+        let res = System::from_toml(toml);
         res.unwrap_err();
     }
 
     #[test]
     fn test_fail_unless_there_is_a_starting_point() {
-        let file = write_file(
+        let toml =
             r#"
             [[program]]
             name = "prog"
             argv = ["foo"]
             depends = ["prog"]
-        "#,
-        );
+        "#;
 
-        let res = System::from_file(file.path().to_str().unwrap());
+        let res = System::from_toml(toml);
         res.unwrap_err();
     }
 
     #[test]
     fn test_fail_on_duplicate_names() {
-        let file = write_file(
+        let toml =
             r#"
             [[program]]
             name = "prog"
@@ -246,16 +237,15 @@ mod tests {
             [[program]]
             name = "prog"
             argv = ["foo"]
-        "#,
-        );
+        "#;
 
-        let res = System::from_file(file.path().to_str().unwrap());
+        let res = System::from_toml(toml);
         res.unwrap_err();
     }
 
     #[test]
     fn test_ready_signals() {
-        let file = write_file(
+        let toml =
             r#"
             [[program]]
             name = "default"
@@ -275,10 +265,9 @@ mod tests {
             name = "manual"
             argv = ["foo"]
             ready = {manual={}}
-            "#
-        );
+            "#;
 
-        let res = System::from_file(file.path().to_str().unwrap()).unwrap();
+        let res = System::from_toml(toml).unwrap();
 
         assert_eq!(ReadySignal::Nothing, res.program[0].ready);
         assert_eq!(ReadySignal::Port(123), res.program[1].ready);
@@ -288,7 +277,7 @@ mod tests {
 
     #[test]
     fn test_depends() {
-        let file = write_file(
+        let toml =
             r#"
             [[program]]
             name = "default"
@@ -298,10 +287,9 @@ mod tests {
             name = "port"
             argv = ["foo"]
             depends = ["default"]
-            "#
-        );
+            "#;
 
-        let res = System::from_file(file.path().to_str().unwrap()).unwrap();
+        let res = System::from_toml(toml).unwrap();
 
         assert!(res.program[0].depends.is_empty());
         assert_eq!(vec!["default"], res.program[1].depends);
