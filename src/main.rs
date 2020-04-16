@@ -8,6 +8,7 @@ mod config;
 mod execution;
 mod output;
 mod executionlist;
+mod readysignals;
 
 fn main() -> Result<(), Box<dyn Error>> {
     do_main().map_err(|e| {

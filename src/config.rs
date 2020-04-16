@@ -43,7 +43,10 @@ pub struct Program {
 pub enum ReadySignal {
     Nothing,
     Manual,
+    Timer(f64),
     Port(u16),
+    Stdout(String),
+    Completed,
 }
 
 fn default_cwd() -> String {
@@ -266,6 +269,21 @@ mod tests {
             name = "manual"
             argv = ["foo"]
             ready = {manual={}}
+
+            [[program]]
+            name = "timer"
+            argv = ["foo"]
+            ready = {timer=0.5}
+
+            [[program]]
+            name = "stdout"
+            argv = ["foo"]
+            ready = {stdout="^ready$"}
+
+            [[program]]
+            name = "completed"
+            argv = ["foo"]
+            ready = {completed={}}
             "#;
 
         let res = System::from_toml(toml).unwrap();
@@ -274,6 +292,9 @@ mod tests {
         assert_eq!(ReadySignal::Port(123), res.program[1].ready);
         assert_eq!(ReadySignal::Nothing, res.program[2].ready);
         assert_eq!(ReadySignal::Manual, res.program[3].ready);
+        assert_eq!(ReadySignal::Timer(0.5), res.program[4].ready);
+        assert_eq!(ReadySignal::Stdout("^ready$".to_string()), res.program[5].ready);
+        assert_eq!(ReadySignal::Completed, res.program[6].ready);
     }
 
     #[test]
