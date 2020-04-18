@@ -3,3 +3,4 @@ terminate_timeout = 0.01
 [[program]]
 name = "diehard"
 argv = ["./target/testrun/bin/sigterm_intercept", "--diehard"]
+ready = {timer=0.1}

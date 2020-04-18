@@ -77,7 +77,7 @@ impl System {
         System::validate(s)
     }
 
-    #[allow(dead_code)] // surpress warning, useful in tests but not used in production code
+    #[allow(dead_code)] // surpress false warning, used in tests
     pub fn from_toml(toml: &str) -> Result<System> {
         let s = serde_any::from_str(toml, serde_any::Format::Toml);
         System::validate(s)

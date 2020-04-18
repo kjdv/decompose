@@ -6,13 +6,11 @@ build:
 update:
 	cargo update
 
-test: check test-unit
+test:
+	cargo test -- --test-threads=1
 
 check:
 	cargo check --bins --examples --tests
-
-test-unit:
-	cargo test -- --test-threads=1
 
 format:
 	cargo fmt
