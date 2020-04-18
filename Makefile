@@ -12,7 +12,7 @@ check:
 	cargo check --bins --examples --tests
 
 unit-test:
-	cargo test tests -- --test-threads=1
+	cargo test -- --test-threads=1
 
 format:
 	cargo fmt

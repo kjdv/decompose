@@ -130,15 +130,6 @@ impl<'a> Completed<'a> {
 
 impl<'a> ReadySignal for Completed<'a> {
     fn poll(&mut self) -> Result<bool> {
-        match self.proc.poll() {
-            Some(status) => {
-                if status.success() {
-                    Ok(true)
-                } else {
-                    Err(string_error::new_err("task failed"))
-                }
-            },
-            None => Ok(false),
-        }
+        Ok(self.proc.poll().is_some())
     }
 }
