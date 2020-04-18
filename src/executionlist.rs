@@ -32,7 +32,7 @@ impl ExecutionList {
         // returns true if no more polling needs to be done
 
         for prog in &mut self.running {
-            if !self.ready.contains(&prog.info().name) && prog.is_ready() {
+            if !self.ready.contains(&prog.info().name) && prog.is_ready()? {
                 log::info!("{:?} ready", prog.info().name);
                 self.ready.insert(prog.info().name.clone());
             }

@@ -153,8 +153,8 @@ impl Program {
         })
     }
 
-    pub fn is_ready(&mut self) -> bool {
-        self.ready.poll().unwrap()
+    pub fn is_ready(&mut self) -> Result<bool> {
+        self.ready.poll()
     }
 
     pub fn info(&self) -> &ProgramInfo {
