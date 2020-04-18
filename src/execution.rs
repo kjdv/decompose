@@ -130,23 +130,25 @@ pub struct Program {
 }
 
 impl Program {
-    pub fn from_config(prog: &config::Program, output: &output::OutputFileFactory) -> Result<Program> {
-        create_program(prog, &output)
-            .and_then(|popen|{
-                let pid = popen
-                    .pid()
-                    .ok_or_else(|| string_error::new_err("could not obtain pid"))?;
-                let prog = Program {
-                    info: ProgramInfo {
-                        name: prog.name.clone(),
-                        pid,
-                    },
-                    program: popen,
-                };
+    pub fn from_config(
+        prog: &config::Program,
+        output: &output::OutputFileFactory,
+    ) -> Result<Program> {
+        create_program(prog, &output).and_then(|popen| {
+            let pid = popen
+                .pid()
+                .ok_or_else(|| string_error::new_err("could not obtain pid"))?;
+            let prog = Program {
+                info: ProgramInfo {
+                    name: prog.name.clone(),
+                    pid,
+                },
+                program: popen,
+            };
 
-                log::info!("{} started", prog.info);
-                Ok(prog)
-            })
+            log::info!("{} started", prog.info);
+            Ok(prog)
+        })
     }
 
     pub fn is_ready(&self) -> bool {

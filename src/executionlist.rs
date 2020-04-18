@@ -1,7 +1,7 @@
 extern crate string_error;
 
-use std::collections::HashSet;
 use log;
+use std::collections::HashSet;
 
 use super::*;
 
@@ -16,8 +16,11 @@ pub struct ExecutionList {
 }
 
 impl ExecutionList {
-    pub fn from_system(cfg: &config::System, output_factory: output::OutputFileFactory) -> ExecutionList {
-        ExecutionList{
+    pub fn from_system(
+        cfg: &config::System,
+        output_factory: output::OutputFileFactory,
+    ) -> ExecutionList {
+        ExecutionList {
             running: Vec::new(),
             pending: cfg.program.clone(),
             ready: HashSet::new(),

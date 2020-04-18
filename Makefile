@@ -6,12 +6,12 @@ build:
 update:
 	cargo update
 
-test: check unit-test
+test: check test-unit
 
 check:
 	cargo check --bins --examples --tests
 
-unit-test:
+test-unit:
 	cargo test -- --test-threads=1
 
 format:

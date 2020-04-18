@@ -121,7 +121,7 @@ impl Fixture {
     }
 
     fn expect_start(&mut self) {
-        let dur = std::time::Duration::from_millis(100);
+        let dur = std::time::Duration::from_millis(500);
         log::info!("waiting {:?} to let everything start", dur);
         std::thread::sleep(dur); // todo: find a better way to deal with these race conditions
 
@@ -195,7 +195,7 @@ fn http_get(port: u16, path: &str) -> (u16, String) {
 ////
 
 #[test]
-fn can_start_and_stop() {
+fn toplevel_can_start_and_stop() {
     let mut f = Fixture::new("single.toml");
     f.expect_start();
     let prog = f.expect_program_starts();
@@ -205,7 +205,7 @@ fn can_start_and_stop() {
 }
 
 #[test]
-fn stop_if_all_programs_dies() {
+fn toplevel_stop_if_all_programs_dies() {
     let mut f = Fixture::new("single.toml");
     f.expect_start();
 
@@ -216,7 +216,7 @@ fn stop_if_all_programs_dies() {
 }
 
 #[test]
-fn program_is_killed_if_it_catches_sigterm() {
+fn toplevel_program_is_killed_if_it_catches_sigterm() {
     let mut f = Fixture::new("diehard.toml");
     f.expect_start();
 
@@ -233,7 +233,7 @@ fn program_is_killed_if_it_catches_sigterm() {
 ////
 
 #[test]
-fn starts_and_stops_in_the_right_order() {
+fn toplevel_starts_and_stops_in_the_right_order() {
     let mut f = Fixture::new("ensemble.toml");
     f.expect_start();
 
@@ -255,7 +255,7 @@ fn starts_and_stops_in_the_right_order() {
 }
 
 #[test]
-fn sets_args() {
+fn toplevel_sets_args() {
     let mut f = Fixture::new("ensemble.toml");
     f.expect_start();
 
@@ -268,7 +268,7 @@ fn sets_args() {
 }
 
 #[test]
-fn sets_env() {
+fn toplevel_sets_env() {
     let mut f = Fixture::new("ensemble.toml");
     f.expect_start();
 
@@ -278,7 +278,7 @@ fn sets_env() {
 }
 
 #[test]
-fn sets_cwd() {
+fn toplevel_sets_cwd() {
     let mut f = Fixture::new("ensemble.toml");
     f.expect_start();
 

@@ -77,7 +77,7 @@ impl System {
         System::validate(s)
     }
 
-    #[allow(dead_code)]  // surpress warning, useful in tests but not used in production code
+    #[allow(dead_code)] // surpress warning, useful in tests but not used in production code
     pub fn from_toml(toml: &str) -> Result<System> {
         let s = serde_any::from_str(toml, serde_any::Format::Toml);
         System::validate(s)
@@ -107,7 +107,9 @@ impl System {
         }
 
         if !found_starting_point {
-            return Err(string_error::new_err("No valid entry point (with empty dependency list) found"));
+            return Err(string_error::new_err(
+                "No valid entry point (with empty dependency list) found",
+            ));
         }
 
         Ok(sys)
@@ -120,8 +122,7 @@ mod tests {
 
     #[test]
     fn test_read() {
-        let toml =
-            r#"
+        let toml = r#"
             terminate_timeout = 0.5
 
             [[program]]
@@ -163,8 +164,7 @@ mod tests {
 
     #[test]
     fn test_optional_values_give_defaults() {
-        let toml =
-            r#"
+        let toml = r#"
             [[program]]
             name = "prog"
             argv = ["abc"]
@@ -184,8 +184,7 @@ mod tests {
 
     #[test]
     fn test_fail_if_mandatory_are_absent() {
-        let toml =
-            r#"
+        let toml = r#"
             [[program]]
             argv = ["abc"]
         "#;
@@ -193,8 +192,7 @@ mod tests {
         let res = System::from_toml(toml);
         res.unwrap_err();
 
-        let toml =
-            r#"
+        let toml = r#"
             [[program]]
             name = "prog"
         "#;
@@ -205,8 +203,7 @@ mod tests {
 
     #[test]
     fn test_fail_unless_exec_is_given() {
-        let toml =
-            r#"
+        let toml = r#"
             [[program]]
             name = "prog"
             argv = []
@@ -218,8 +215,7 @@ mod tests {
 
     #[test]
     fn test_fail_unless_there_is_a_starting_point() {
-        let toml =
-            r#"
+        let toml = r#"
             [[program]]
             name = "prog"
             argv = ["foo"]
@@ -232,8 +228,7 @@ mod tests {
 
     #[test]
     fn test_fail_on_duplicate_names() {
-        let toml =
-            r#"
+        let toml = r#"
             [[program]]
             name = "prog"
             argv = ["foo"]
@@ -249,8 +244,7 @@ mod tests {
 
     #[test]
     fn test_ready_signals() {
-        let toml =
-            r#"
+        let toml = r#"
             [[program]]
             name = "default"
             argv = ["foo"]
@@ -293,14 +287,16 @@ mod tests {
         assert_eq!(ReadySignal::Nothing, res.program[2].ready);
         assert_eq!(ReadySignal::Manual, res.program[3].ready);
         assert_eq!(ReadySignal::Timer(0.5), res.program[4].ready);
-        assert_eq!(ReadySignal::Stdout("^ready$".to_string()), res.program[5].ready);
+        assert_eq!(
+            ReadySignal::Stdout("^ready$".to_string()),
+            res.program[5].ready
+        );
         assert_eq!(ReadySignal::Completed, res.program[6].ready);
     }
 
     #[test]
     fn test_depends() {
-        let toml =
-            r#"
+        let toml = r#"
             [[program]]
             name = "default"
             argv = ["foo"]

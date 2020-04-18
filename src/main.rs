@@ -6,8 +6,8 @@ use std::error::Error;
 
 mod config;
 mod execution;
-mod output;
 mod executionlist;
+mod output;
 mod readysignals;
 
 fn main() -> Result<(), Box<dyn Error>> {
