@@ -5,10 +5,10 @@ extern crate simple_logger;
 use std::error::Error;
 
 mod config;
+mod readysignals;
 mod execution;
 mod executionlist;
 mod output;
-mod readysignals;
 
 fn main() -> Result<(), Box<dyn Error>> {
     do_main().map_err(|e| {

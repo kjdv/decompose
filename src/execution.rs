@@ -127,6 +127,7 @@ impl std::fmt::Display for ProgramInfo {
 pub struct Program {
     info: ProgramInfo,
     program: Popen,
+    ready: Box<dyn readysignals::ReadySignal>,
 }
 
 impl Program {
@@ -134,7 +135,7 @@ impl Program {
         prog: &config::Program,
         output: &output::OutputFileFactory,
     ) -> Result<Program> {
-        create_program(prog, &output).and_then(|popen| {
+        create_program(prog, &output).and_then(|(popen, rs)| {
             let pid = popen
                 .pid()
                 .ok_or_else(|| string_error::new_err("could not obtain pid"))?;
@@ -144,6 +145,7 @@ impl Program {
                     pid,
                 },
                 program: popen,
+                ready: rs,
             };
 
             log::info!("{} started", prog.info);
@@ -151,8 +153,8 @@ impl Program {
         })
     }
 
-    pub fn is_ready(&self) -> bool {
-        true
+    pub fn is_ready(&mut self) -> bool {
+        self.ready.poll().unwrap()
     }
 
     pub fn info(&self) -> &ProgramInfo {
@@ -160,7 +162,7 @@ impl Program {
     }
 }
 
-fn create_program(cfg: &config::Program, output: &output::OutputFileFactory) -> Result<Popen> {
+fn create_program(cfg: &config::Program, output: &output::OutputFileFactory) -> Result<(Popen, Box<dyn readysignals::ReadySignal>)> {
     assert!(!cfg.argv.is_empty());
     assert!(cfg.enabled);
 
@@ -170,14 +172,39 @@ fn create_program(cfg: &config::Program, output: &output::OutputFileFactory) -> 
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
 
-    let stdout = output.open(cfg.name.as_str())?;
+    let (stdout, path) = output.open(cfg.name.as_str())?;
 
-    Exec::cmd(&cfg.argv[0])
+    let proc = Exec::cmd(&cfg.argv[0])
         .args(&cfg.argv.as_slice()[1..])
         .env_extend(&env)
         .cwd(&cfg.cwd)
         .stdout(stdout)
         .stderr(Redirection::Merge)
-        .popen()
-        .map_err(|e| e.into())
+        .popen()?;
+
+    let rs: Box<dyn readysignals::ReadySignal> = match &cfg.ready {
+        config::ReadySignal::Nothing => {
+            Box::new(readysignals::Nothing::new())
+        },
+        config::ReadySignal::Manual => {
+            Box::new(readysignals::Manual::new(cfg.name.clone()))
+        },
+        config::ReadySignal::Timer(s) => {
+            Box::new(readysignals::Timer::new(std::time::Duration::from_secs_f64(*s)))
+        },
+        config::ReadySignal::Completed => {
+            //Box::new(readysignals::Nothing::new())
+            let pid = proc.pid().ok_or_else(|| string_error::new_err("no pid"))?;
+            Box::new(readysignals::Completed::new(pid))
+        }
+        config::ReadySignal::Port(p) => {
+            Box::new(readysignals::Port::new(*p))
+        },
+        config::ReadySignal::Stdout(re) => {
+            let r = readysignals::Stdout::new(path, re.to_string())?;
+            Box::new(r)
+        }
+    };
+
+    Ok((proc, rs))
 }

@@ -32,11 +32,12 @@ impl OutputFileFactory {
         Ok(OutputFileFactory { outdir })
     }
 
-    pub fn open(&self, filename: &str) -> Result<fs::File> {
+    pub fn open(&self, filename: &str) -> Result<(fs::File, std::path::PathBuf)> {
         let mut path = self.outdir.clone();
         path.push(filename);
+        let p = path.clone();
         let f = fs::File::create(path)?;
-        Ok(f)
+        Ok((f, p))
     }
 }
 
@@ -90,7 +91,7 @@ mod tests {
 
         {
             let mut f = output.open("test").unwrap();
-            f.write_all(b"hello!\n").unwrap();
+            f.0.write_all(b"hello!\n").unwrap();
         }
 
         let mut p = r.into_path();
@@ -102,5 +103,18 @@ mod tests {
         f.read_to_string(&mut buf).unwrap();
 
         assert_eq!("hello!\n", buf.as_str());
+    }
+
+    #[test]
+    fn open_returns_path_() {
+        let r = root();
+        let output = OutputFileFactory::new(&r.path().to_str().unwrap()).unwrap();
+
+        let (_, path) = output.open("test").unwrap();
+
+        let mut expect = output.outdir;
+        expect.push("test");
+
+        assert_eq!(expect, path);
     }
 }

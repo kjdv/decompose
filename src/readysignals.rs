@@ -1,4 +1,5 @@
 extern crate regex;
+extern crate nix;
 
 use std::io;
 use std::io::BufRead;
@@ -10,7 +11,13 @@ pub trait ReadySignal {
     fn poll(&mut self) -> Result<bool>;
 }
 
-pub type Nothing = ();
+pub struct Nothing {}
+
+impl Nothing {
+    pub fn new() -> Nothing {
+        Nothing{}
+    }
+}
 
 impl ReadySignal for Nothing {
     fn poll(&mut self) -> Result<bool> {
@@ -135,19 +142,36 @@ impl ReadySignal for Stdout {
     }
 }
 
-pub struct Completed<'a> {
-    proc: &'a mut subprocess::Popen,
+pub struct Completed {
+    pid: nix::unistd::Pid,
+    ready: bool,
 }
 
-impl<'a> Completed<'a> {
-    pub fn new(proc: &'a mut subprocess::Popen) -> Completed<'a> {
-        Completed { proc }
+impl Completed {
+    pub fn new(pid: u32) -> Completed {
+        Completed {
+            pid: nix::unistd::Pid::from_raw(pid as i32),
+            ready: false,
+        }
     }
 }
 
-impl<'a> ReadySignal for Completed<'a> {
+impl ReadySignal for Completed {
     fn poll(&mut self) -> Result<bool> {
-        Ok(self.proc.poll().is_some())
+        use nix::sys::wait;
+
+        if self.ready {
+            return Ok(true);
+        }
+
+        let status = wait::waitpid(self.pid, None)?;
+        match status {
+            wait::WaitStatus::Exited(_, _) => {
+                self.ready = true;
+                Ok(true)
+            },
+            _ => Ok(false)
+        }
     }
 }
 
@@ -177,7 +201,7 @@ mod tests {
 
     #[test]
     fn nothing() {
-        let mut rs: Nothing = ();
+        let mut rs = Nothing::new();
         assert_is_true(&mut rs);
     }
 
@@ -267,11 +291,11 @@ mod tests {
 
     #[test]
     fn completed() {
-        let mut proc = subprocess::Exec::cmd("/bin/ls")
+        let proc = subprocess::Exec::cmd("/bin/ls")
             .popen()
             .unwrap();
 
-        let mut rs = Completed::new(&mut proc);
+        let mut rs = Completed::new(proc.pid().unwrap());
 
         while !rs.poll().expect("poll") {}
 

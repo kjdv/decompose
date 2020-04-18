@@ -31,7 +31,7 @@ impl ExecutionList {
     pub fn poll(&mut self) -> Result<bool> {
         // returns true if no more polling needs to be done
 
-        for prog in &self.running {
+        for prog in &mut self.running {
             if !self.ready.contains(&prog.info().name) && prog.is_ready() {
                 log::info!("{:?} ready", prog.info().name);
                 self.ready.insert(prog.info().name.clone());
@@ -115,7 +115,7 @@ mod tests {
     }
 
     #[test]
-    fn mutlitple_depends() {
+    fn multiple_depends() {
         let toml = r#"
         [[program]]
         name = "last"
