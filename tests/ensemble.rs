@@ -3,7 +3,7 @@ mod common;
 mod ensemble {
     use super::common::*;
 
-    fn assert_ready(f: &mut Fixture) -> (ProgramInfo, ProgramInfo){
+    fn assert_ready(f: &mut Fixture) -> (ProgramInfo, ProgramInfo) {
         f.expect_start();
 
         let srv = f.expect_program_ready();

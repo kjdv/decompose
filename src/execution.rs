@@ -4,8 +4,8 @@ extern crate subprocess;
 use log;
 use signal_hook::{iterator::Signals, SIGCHLD, SIGINT, SIGTERM};
 use std::error::Error;
-use subprocess::{Exec, Popen, Redirection};
 use std::ops::Add;
+use subprocess::{Exec, Popen, Redirection};
 
 use super::*;
 
@@ -189,7 +189,10 @@ impl Drop for Program {
     }
 }
 
-fn create_program(cfg: &config::Program, output: &output::OutputFileFactory) -> Result<(Popen, Box<dyn readysignals::ReadySignal>)> {
+fn create_program(
+    cfg: &config::Program,
+    output: &output::OutputFileFactory,
+) -> Result<(Popen, Box<dyn readysignals::ReadySignal>)> {
     assert!(!cfg.argv.is_empty());
     assert!(cfg.enabled);
 
@@ -210,23 +213,17 @@ fn create_program(cfg: &config::Program, output: &output::OutputFileFactory) -> 
         .popen()?;
 
     let rs: Box<dyn readysignals::ReadySignal> = match &cfg.ready {
-        config::ReadySignal::Nothing => {
-            Box::new(readysignals::Nothing::new())
-        },
-        config::ReadySignal::Manual => {
-            Box::new(readysignals::Manual::new(cfg.name.clone()))
-        },
-        config::ReadySignal::Timer(s) => {
-            Box::new(readysignals::Timer::new(std::time::Duration::from_secs_f64(*s)))
-        },
+        config::ReadySignal::Nothing => Box::new(readysignals::Nothing::new()),
+        config::ReadySignal::Manual => Box::new(readysignals::Manual::new(cfg.name.clone())),
+        config::ReadySignal::Timer(s) => Box::new(readysignals::Timer::new(
+            std::time::Duration::from_secs_f64(*s),
+        )),
         config::ReadySignal::Completed => {
             //Box::new(readysignals::Nothing::new())
             let pid = proc.pid().ok_or_else(|| string_error::new_err("no pid"))?;
             Box::new(readysignals::Completed::new(pid))
         }
-        config::ReadySignal::Port(p) => {
-            Box::new(readysignals::Port::new(*p))
-        },
+        config::ReadySignal::Port(p) => Box::new(readysignals::Port::new(*p)),
         config::ReadySignal::Stdout(re) => {
             let r = readysignals::Stdout::new(path, re.to_string())?;
             Box::new(r)

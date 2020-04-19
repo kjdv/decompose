@@ -170,7 +170,12 @@ impl Fixture {
     }
 
     pub fn send_stdin(&mut self, data: &str) {
-        self.process.stdin.as_ref().unwrap().write_all(data.as_bytes()).unwrap();
+        self.process
+            .stdin
+            .as_ref()
+            .unwrap()
+            .write_all(data.as_bytes())
+            .unwrap();
         self.process.stdin.as_ref().unwrap().flush().unwrap();
     }
 

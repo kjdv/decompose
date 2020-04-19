@@ -30,7 +30,7 @@ impl OutputFileFactory {
             log::debug!("can't remove {:?}: {:?}", latest, e);
         }
         std::os::unix::fs::symlink(&outdir, latest)?;
-        
+
         Ok(OutputFileFactory { outdir })
     }
 

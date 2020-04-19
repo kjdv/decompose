@@ -1,5 +1,5 @@
-extern crate regex;
 extern crate nix;
+extern crate regex;
 
 use std::io;
 use std::io::BufRead;
@@ -15,7 +15,7 @@ pub struct Nothing {}
 
 impl Nothing {
     pub fn new() -> Nothing {
-        Nothing{}
+        Nothing {}
     }
 }
 
@@ -169,8 +169,8 @@ impl ReadySignal for Completed {
             wait::WaitStatus::Exited(_, _) => {
                 self.ready = true;
                 Ok(true)
-            },
-            _ => Ok(false)
+            }
+            _ => Ok(false),
         }
     }
 }
