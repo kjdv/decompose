@@ -10,6 +10,6 @@ Service orchestration not depending on docker, optimised for dev.
 - [x] separate start from ready, by open port, stdout regex
 - [x] respect cwd
 - [x] Selectively start
-- [-] Provisioning: separate build and run steps - won't do (can be done by tasks)
+- [x] Provisioning: separate build and run steps - won't do (can be done by tasks)
 - [x] Timeout on hanging starts
 - [x] Ordered destruction -> already done, programs stop in reverse order
