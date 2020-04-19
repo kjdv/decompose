@@ -107,37 +107,39 @@ impl ReadySignal for Port {
 }
 
 pub struct Stdout {
-    filename: std::path::PathBuf,
     regex: regex::Regex,
+    reader: std::io::BufReader<std::fs::File>,
+    found: bool,
 }
 
 impl Stdout {
     pub fn new(filename: std::path::PathBuf, re: String) -> Result<Stdout> {
         let re = regex::Regex::new(re.as_str())?;
+        let file = std::fs::File::open(filename)?;
+        let reader = std::io::BufReader::new(file);
+
         Ok(Stdout {
-            filename,
             regex: re,
+            reader,
+            found: false,
         })
     }
 }
 
 impl ReadySignal for Stdout {
     fn poll(&mut self) -> Result<bool> {
-        // there are smarter and faster ways to do this, but simplest is to just grep the whole
-        // file on each poll
+        if self.found {
+            return Ok(true)
+        }
 
-        let filename = self.filename.to_owned();
-        let file = std::fs::File::open(filename)?;
-        let reader = std::io::BufReader::new(file);
+        let mut line = String::new();
+        self.reader.read_line(&mut line)?;
 
-        let m = reader.lines().any(|line| {
-            match line {
-                Ok(line) => self.regex.is_match(line.as_str()),
-                Err(_) => false,
-            }
-        });
-
-        Ok(m)
+        let rn: &[_] = &['\r', '\n'];
+        let line = line.trim_end_matches(rn);
+        
+        self.found = self.regex.is_match(line);
+        Ok(self.found)
     }
 }
 
@@ -261,14 +263,11 @@ mod tests {
 
         let mut buf = tempdir.path().to_path_buf();
         buf.push(filename);
-
-        let mut rs = Stdout::new(buf, "^ready [0-9]+$".to_string()).expect("valid regex");
-
-        assert_is_err(&mut rs); // file does not (yet? exist)
+        let mut f = std::fs::File::create(buf).expect("open for write");
 
         let mut buf = tempdir.path().to_path_buf();
         buf.push(filename);
-        let mut f = std::fs::File::create(buf).expect("open for read");
+        let mut rs = Stdout::new(buf, "^ready [0-9]+$".to_string()).expect("valid regex");
 
         assert_is_false(&mut rs);
 
