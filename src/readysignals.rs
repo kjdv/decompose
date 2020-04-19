@@ -292,6 +292,7 @@ mod tests {
     #[test]
     fn completed() {
         let proc = subprocess::Exec::cmd("/bin/ls")
+            .stdout(subprocess::Redirection::None)
             .popen()
             .unwrap();
 

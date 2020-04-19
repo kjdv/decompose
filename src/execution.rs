@@ -154,7 +154,13 @@ impl Program {
     }
 
     pub fn is_ready(&mut self) -> Result<bool> {
-        self.ready.poll()
+        let r = self.ready.poll();
+        match r {
+            Ok(true) => log::info!("{} ready", self.info),
+            Ok(false) => log::debug!("{} not yet ready", self.info),
+            Err(_) => (),
+        }
+        r
     }
 
     pub fn info(&self) -> &ProgramInfo {

@@ -123,10 +123,6 @@ impl Fixture {
     }
 
     pub fn expect_start(&mut self) {
-        let dur = std::time::Duration::from_millis(500);
-        log::info!("waiting {:?} to let everything start", dur);
-        std::thread::sleep(dur); // todo: find a better way to deal with these race conditions
-
         self.expect_line(r"\[decompose::execution\] starting execution");
     }
 
@@ -137,6 +133,15 @@ impl Fixture {
     pub fn expect_program_starts(&mut self) -> ProgramInfo {
         let caps =
             self.expect_line(r"\[decompose::execution\] ([a-zA-Z][a-zA-Z0-9]+):([0-9]+) started");
+        ProgramInfo {
+            name: caps.get(1).unwrap().to_string(),
+            pid: caps.get(2).unwrap().to_string().parse().unwrap(),
+        }
+    }
+
+    pub fn expect_program_ready(&mut self) -> ProgramInfo {
+        let caps =
+            self.expect_line(r"\[decompose::execution\] ([a-zA-Z][a-zA-Z0-9]+):([0-9]+) ready");
         ProgramInfo {
             name: caps.get(1).unwrap().to_string(),
             pid: caps.get(2).unwrap().to_string().parse().unwrap(),

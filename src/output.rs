@@ -26,9 +26,11 @@ impl OutputFileFactory {
         let mut latest = outdir_root_buf;
         latest.push("latest");
 
-        let _ = fs::remove_file(&latest);
+        if let Err(e) = fs::remove_file(&latest) {
+            log::debug!("can't remove {:?}: {:?}", latest, e);
+        }
         std::os::unix::fs::symlink(&outdir, latest)?;
-
+        
         Ok(OutputFileFactory { outdir })
     }
 
