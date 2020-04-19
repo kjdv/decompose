@@ -131,7 +131,6 @@ impl ReadySignal for Stdout {
         let reader = std::io::BufReader::new(file);
 
         let m = reader.lines().any(|line| {
-            println!("{:?}", line);
             match line {
                 Ok(line) => self.regex.is_match(line.as_str()),
                 Err(_) => false,
