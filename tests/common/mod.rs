@@ -79,6 +79,7 @@ impl Fixture {
             .arg("--debug")
             .arg(data_file(config).as_os_str())
             .stdout(subprocess::Redirection::Pipe)
+            .stderr(subprocess::Redirection::Merge)
             .stdin(subprocess::Redirection::Pipe)
             .popen()
             .expect("popen");
@@ -171,6 +172,12 @@ impl Fixture {
     pub fn send_stdin(&mut self, data: &str) {
         self.process.stdin.as_ref().unwrap().write_all(data.as_bytes()).unwrap();
         self.process.stdin.as_ref().unwrap().flush().unwrap();
+    }
+
+    pub fn expect_exited(&mut self) {
+        if let Ok(None) = self.process.wait_timeout(std::time::Duration::from_secs(1)) {
+            assert!(false);
+        }
     }
 }
 

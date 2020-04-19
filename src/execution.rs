@@ -5,6 +5,7 @@ use log;
 use signal_hook::{iterator::Signals, SIGCHLD, SIGINT, SIGTERM};
 use std::error::Error;
 use subprocess::{Exec, Popen, Redirection};
+use std::ops::Add;
 
 use super::*;
 
@@ -25,8 +26,20 @@ impl Execution {
         let mut list = executionlist::ExecutionList::from_system(&cfg, output);
 
         let sleep_time = std::time::Duration::from_millis(10);
+        let start = std::time::SystemTime::now();
+
         while !list.poll()? {
+            log::debug!("not ready yet");
             std::thread::sleep(sleep_time);
+
+            if let Some(dur) = cfg.start_timeout {
+                let end = start.add(std::time::Duration::from_secs_f64(dur));
+
+                if std::time::SystemTime::now() >= end {
+                    log::error!("timed out waiting to start");
+                    return Err(string_error::new_err("timed out waiting to start"));
+                }
+            }
         }
 
         let execution = Execution {
@@ -165,6 +178,14 @@ impl Program {
 
     pub fn info(&self) -> &ProgramInfo {
         &self.info
+    }
+}
+
+impl Drop for Program {
+    fn drop(&mut self) {
+        let _ = self.program.terminate();
+        let _ = self.program.kill();
+        let _ = self.program.wait();
     }
 }
 

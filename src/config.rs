@@ -15,6 +15,9 @@ pub struct System {
 
     #[serde(default = "default_terminate_timeout")]
     pub terminate_timeout: f64,
+
+    #[serde(default = "default_start_timeout")]
+    pub start_timeout: Option<f64>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -61,6 +64,10 @@ fn default_enabled() -> bool {
 
 fn default_terminate_timeout() -> f64 {
     1.0
+}
+
+fn default_start_timeout() -> Option<f64> {
+    None
 }
 
 fn default_ready_signal() -> ReadySignal {
@@ -123,6 +130,7 @@ mod tests {
     #[test]
     fn test_read() {
         let toml = r#"
+            start_timeout = 10.2
             terminate_timeout = 0.5
 
             [[program]]
@@ -143,6 +151,7 @@ mod tests {
         let system = System::from_toml(toml).unwrap();
 
         assert!((system.terminate_timeout - 0.5).abs() < 0.001);
+        assert!((system.start_timeout.unwrap() - 10.2).abs() < 0.001);
 
         let prog1 = &system.program[0];
 
@@ -173,6 +182,7 @@ mod tests {
         let system = System::from_toml(toml).unwrap();
 
         assert!((system.terminate_timeout - 1.0).abs() < 0.001);
+        assert_eq!(None, system.start_timeout);
 
         let prog = &system.program[0];
 
