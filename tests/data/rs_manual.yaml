@@ -1,0 +1,6 @@
+program:
+  - name: prog
+    argv:
+      - ./target/testrun/bin/sigterm_intercept
+    ready:
+      manual:

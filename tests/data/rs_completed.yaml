@@ -1,0 +1,14 @@
+program:
+  - name: dep
+    argv:
+      - /bin/ls
+    ready:
+      completed:
+  - name: prog
+    argv:
+      - ./target/testrun/bin/http_server
+      - --address=127.0.0.1:9093
+    ready:
+      port: 9093
+    depends:
+      - dep

@@ -16,6 +16,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let signals = Signals::new(&[SIGINT, SIGTERM])?;
 
+    println!("listening for SIGINT and SIGTERM");
     for sig in signals.forever() {
         println!("Received signal {:?}", sig);
 

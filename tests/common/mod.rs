@@ -1,5 +1,5 @@
 use nix::sys::signal::{kill, SIGTERM};
-use std::io::BufRead;
+use std::io::{BufRead, Write};
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Once;
@@ -79,6 +79,7 @@ impl Fixture {
             .arg("--debug")
             .arg(data_file(config).as_os_str())
             .stdout(subprocess::Redirection::Pipe)
+            .stdin(subprocess::Redirection::Pipe)
             .popen()
             .expect("popen");
 
@@ -102,7 +103,7 @@ impl Fixture {
         line
     }
 
-    fn expect_line(&mut self, re: &str) -> Vec<String> {
+    pub fn expect_line(&mut self, re: &str) -> Vec<String> {
         // returns captures
         let re = regex::Regex::new(re).expect("valid regex");
         loop {
@@ -165,6 +166,11 @@ impl Fixture {
 
     pub fn terminate_program(&self, program: &ProgramInfo) {
         kill(nix::unistd::Pid::from_raw(program.pid), SIGTERM).expect("term");
+    }
+
+    pub fn send_stdin(&mut self, data: &str) {
+        self.process.stdin.as_ref().unwrap().write_all(data.as_bytes()).unwrap();
+        self.process.stdin.as_ref().unwrap().flush().unwrap();
     }
 }
 
