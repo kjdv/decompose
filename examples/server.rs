@@ -35,21 +35,14 @@ fn serve(address: &str) {
 
     for stream in listener.incoming() {
         match handle(stream.expect("stream")) {
-            Ok(_) => println!("done handling"),
+            Ok(_) => println!("done"),
             Err(e) => println!("Error: {}", e),
         };
     }
 }
 
 fn handle(mut stream: TcpStream) -> Result<()> {
-    loop {
-        handle_single(&mut stream)?;
-        stream.flush()?;
-    }
-}
-
-fn handle_single(stream: &mut TcpStream) -> Result<()> {
-    let mut buf = [0; 32];
+    let mut buf = [0; 512];
 
     let size = stream.read(&mut buf)?;
     let request = String::from_utf8_lossy(&buf[0..size]);
@@ -84,5 +77,6 @@ fn handle_single(stream: &mut TcpStream) -> Result<()> {
         return Err(string_error::new_err("404"));
     }
 
+    stream.flush()?;
     Ok(())
 }

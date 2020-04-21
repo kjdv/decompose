@@ -13,3 +13,8 @@ Service orchestration not depending on docker, optimised for dev.
 - [x] Provisioning: separate build and run steps - won't do (can be done by tasks)
 - [x] Timeout on hanging starts
 - [x] Ordered destruction -> already done, programs stop in reverse order
+
+### suggestions
+
+- [ ] Inotify-like interface to automatically reload targets and dependees
+      (needs cleaner dependency graph coding)

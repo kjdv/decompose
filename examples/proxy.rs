@@ -28,10 +28,10 @@ fn main() {
 
     let address = args.value_of("address").unwrap();
     let forward = args.value_of("forward").unwrap();
-    serve(address, forward.to_string());
+    serve(address, forward);
 }
 
-fn serve(address: &str, forward: String) {
+fn serve(address: &str, forward: &str) {
     println!("listening at {}, forwarding to {}", address, forward);
 
     let listener = TcpListener::bind(address).expect("bind");
@@ -40,21 +40,13 @@ fn serve(address: &str, forward: String) {
         println!("new connection");
 
         match handle(stream.expect("stream"), &forward) {
-            Ok(_) => println!("done handling"),
+            Ok(_) => println!("done"),
             Err(e) => println!("Error: {}", e),
         };
     }
 }
 
-fn handle(mut stream: TcpStream, forward: &String) -> Result<()> {
-    let mut forward = TcpStream::connect(forward.as_str())?;
-
-    loop {
-        handle_single(&mut stream, &mut forward)?;
-    }
-}
-
-fn handle_single(stream: &mut TcpStream, forward: &mut TcpStream) -> Result<()> {
+fn handle(mut stream: TcpStream, forward: &str) -> Result<()> {
     let mut buf = [0; 512];
 
     let size = stream.read(&mut buf)?;
@@ -65,6 +57,7 @@ fn handle_single(stream: &mut TcpStream, forward: &mut TcpStream) -> Result<()> 
 
     println!("proxying '{}'", String::from_utf8_lossy(&buf[0..size]));
 
+    let mut forward = TcpStream::connect(forward)?;
     forward.write_all(&buf[0..size])?;
     forward.flush()?;
 
