@@ -1,5 +1,5 @@
 use nix::sys::signal::{kill, SIGTERM};
-use std::io::{BufRead, Write};
+use std::io::{BufRead, Read, Write};
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Once;
@@ -7,6 +7,8 @@ use subprocess;
 
 static LOG_INIT: Once = Once::new();
 static BIN_INIT: Once = Once::new();
+
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 fn bin_root() -> PathBuf {
     let mut path = std::env::current_exe().expect("current exe");
@@ -46,7 +48,7 @@ fn helper_path(name: &str) -> PathBuf {
 }
 
 fn link_helpers() {
-    const HELPERS: [&str; 3] = ["sigterm_intercept", "http_server", "http_proxy"];
+    const HELPERS: [&str; 3] = ["sigterm_intercept", "server", "proxy"];
 
     let mut target_dir = testrun_dir();
     target_dir.push("bin");
@@ -205,11 +207,16 @@ impl std::fmt::Display for ProgramInfo {
 }
 
 #[allow(dead_code)]
-pub fn http_get(port: u16, path: &str) -> (u16, String) {
-    let url = format!("http://127.0.0.1:{}/{}", port, path);
-    let res = reqwest::blocking::get(&url).expect("http get");
-    let status = res.status().as_u16();
-    let body = res.text().unwrap();
+pub fn call(port: u16, path: &str) -> Result<String> {
+    let address = format!("127.0.0.1:{}", port);
+    let mut stream = std::net::TcpStream::connect(address.as_str())?;
 
-    (status, body)
+    stream.write_all(path.as_bytes())?;
+    stream.flush()?;
+    
+    let mut buf = [0; 512];
+    let size = stream.read(&mut buf)?;
+
+    let response = String::from_utf8_lossy(&buf[0..size]);
+    Ok(response.to_string())
 }

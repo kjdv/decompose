@@ -22,5 +22,3 @@ nix = "^0.17.0"
 
 [dev-dependencies]
 tempfile = "^3.1.0"
-rouille = "^3.0.0"
-reqwest = { version = "^0.10.1", features = ["blocking"] }

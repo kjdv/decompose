@@ -20,9 +20,8 @@ mod ensemble {
         let mut f = Fixture::new("ensemble.toml");
         let (srv, proxy) = assert_ready(&mut f);
 
-        let (status, body) = http_get(9091, "hello");
-        assert_eq!(200, status);
-        assert_eq!("hello!\n", body);
+        let body = call(9091, "hello").expect("call");
+        assert_eq!("hello!\n".to_string(), body);
 
         f.stop();
 
@@ -36,9 +35,8 @@ mod ensemble {
         let mut f = Fixture::new("ensemble.toml");
         assert_ready(&mut f);
 
-        let (status, body) = http_get(9090, "args?idx=1");
-        assert_eq!(200, status);
-        assert_eq!("extra", body);
+        let body = call(9090, "args 1").expect("call");
+        assert_eq!("extra".to_string(), body);
 
         f.stop();
         f.expect_stop();
@@ -49,9 +47,8 @@ mod ensemble {
         let mut f = Fixture::new("ensemble.toml");
         assert_ready(&mut f);
 
-        let (status, body) = http_get(9090, "env?key=FOO");
-        assert_eq!(200, status);
-        assert_eq!("BAR", body);
+        let body = call(9090, "env FOO").expect("call");
+        assert_eq!("BAR".to_string(), body);
     }
 
     #[test]
@@ -59,8 +56,7 @@ mod ensemble {
         let mut f = Fixture::new("ensemble.toml");
         assert_ready(&mut f);
 
-        let (status, body) = http_get(9090, "cwd");
-        assert_eq!(200, status);
+        let body = call(9090, "cwd").expect("call");
         assert!(body.ends_with("target/testrun"));
     }
 }

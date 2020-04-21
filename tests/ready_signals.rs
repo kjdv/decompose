@@ -35,8 +35,8 @@ mod readysignals {
         let mut f = Fixture::new("rs_port.yaml");
         f.expect_program_ready();
 
-        let (status, _) = http_get(9093, "hello");
-        assert_eq!(200, status);
+        let status = call(9093, "hello");
+        assert!(status.is_ok());
     }
 
     #[test]
@@ -55,7 +55,7 @@ mod readysignals {
         let prog = f.expect_program_ready();
         assert_eq!("prog", prog.name.as_str());
 
-        let (status, _) = http_get(9093, "hello");
-        assert_eq!(200, status);
+        let status = call(9093, "hello\n");
+        assert!(status.is_ok());
     }
 }

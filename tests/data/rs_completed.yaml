@@ -6,7 +6,7 @@ program:
       completed:
   - name: prog
     argv:
-      - ./target/testrun/bin/http_server
+      - ./target/testrun/bin/server
       - --address=127.0.0.1:9093
     ready:
       port: 9093
