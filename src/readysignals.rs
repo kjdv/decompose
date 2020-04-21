@@ -25,31 +25,32 @@ impl ReadySignal for Nothing {
     }
 }
 
-pub struct Manual {
+pub struct Manual<'a> {
     name: String,
-    prompt: fn() -> io::Result<()>,
+    prompt: Option<Box<dyn FnOnce() -> io::Result<()> + 'a>>,
 }
 
-impl Manual {
-    pub fn new(name: String) -> Manual {
-        Manual::new_with_prompt(name, Manual::stdin)
+impl<'a> Manual<'a> {
+    pub fn new(name: String) -> Manual<'a> {
+        let prompt = Box::new(|| {
+            let mut sink = String::new();
+            io::stdin().read_line(&mut sink)?;
+            Ok(())
+        });
+        Manual::new_with_prompt(name, prompt)
     }
 
-    pub fn new_with_prompt(name: String, prompt: fn() -> io::Result<()>) -> Manual {
-        Manual { name, prompt }
-    }
-
-    fn stdin() -> io::Result<()> {
-        let mut sink = String::new();
-        io::stdin().read_line(&mut sink)?;
-        Ok(())
+    pub fn new_with_prompt(name: String, prompt: Box<dyn FnOnce() -> io::Result<()> + 'a>) -> Manual<'a> {
+        Manual { name, prompt: Some(prompt) }
     }
 }
 
-impl ReadySignal for Manual {
+impl ReadySignal for Manual<'_> {
     fn poll(&mut self) -> Result<bool> {
-        println!("Manually waiting for {}, press enter", self.name);
-        (self.prompt)()?;
+        if let Some(p) = self.prompt.take() {
+            println!("Manually waiting for {}, press enter", self.name);
+            p()?;
+        }
         Ok(true)
     }
 }
@@ -108,8 +109,7 @@ impl ReadySignal for Port {
 
 pub struct Stdout {
     regex: regex::Regex,
-    reader: std::io::BufReader<std::fs::File>,
-    found: bool,
+    reader: Option<std::io::BufReader<std::fs::File>>,
 }
 
 impl Stdout {
@@ -120,26 +120,26 @@ impl Stdout {
 
         Ok(Stdout {
             regex: re,
-            reader,
-            found: false,
+            reader: Some(reader),
         })
     }
 }
 
 impl ReadySignal for Stdout {
     fn poll(&mut self) -> Result<bool> {
-        if self.found {
-            return Ok(true)
+        if let Some(mut reader) = self.reader.take() {
+            let mut line = String::new();
+            reader.read_line(&mut line)?;
+
+            let rn: &[_] = &['\r', '\n'];
+            let line = line.trim_end_matches(rn);
+
+            if !self.regex.is_match(line) {
+                self.reader.replace(reader);
+                return Ok(false);
+            }
         }
-
-        let mut line = String::new();
-        self.reader.read_line(&mut line)?;
-
-        let rn: &[_] = &['\r', '\n'];
-        let line = line.trim_end_matches(rn);
-        
-        self.found = self.regex.is_match(line);
-        Ok(self.found)
+        Ok(true)
     }
 }
 
@@ -208,9 +208,7 @@ mod tests {
 
     #[test]
     fn manual_ok() {
-        fn prompt() -> io::Result<()> {
-            Ok(())
-        }
+        let prompt = Box::new(|| Ok(()));
 
         let mut rs = Manual::new_with_prompt("test".to_string(), prompt);
         assert_is_true(&mut rs);
@@ -218,9 +216,7 @@ mod tests {
 
     #[test]
     fn manual_err() {
-        fn prompt() -> io::Result<()> {
-            Err(io::Error::new(io::ErrorKind::InvalidInput, "blah"))
-        }
+        let prompt = Box::new(|| Err(io::Error::new(io::ErrorKind::InvalidInput, "blah")));
 
         let mut rs = Manual::new_with_prompt("test".to_string(), prompt);
         assert_is_err(&mut rs);
@@ -289,8 +285,9 @@ mod tests {
 
     #[test]
     fn completed() {
+        let sink = std::fs::File::open("/dev/null").unwrap();
         let proc = subprocess::Exec::cmd("/bin/ls")
-            .stdout(subprocess::Redirection::None)
+            .stdout(subprocess::Redirection::File(sink))
             .popen()
             .unwrap();
 
