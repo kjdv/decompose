@@ -3,6 +3,9 @@ all: build
 build:
 	cargo build
 
+install:
+	cargo install --path .
+
 update:
 	cargo update
 
