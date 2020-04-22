@@ -167,9 +167,14 @@ impl ReadySignal for Completed {
 
         let status = wait::waitpid(self.pid, None)?;
         match status {
-            wait::WaitStatus::Exited(_, _) => {
+            wait::WaitStatus::Exited(_, 0) => {
                 self.ready = true;
                 Ok(true)
+            },
+            wait::WaitStatus::Exited(_, n) => {
+                self.ready = true;
+                let e = format!("non-zero exit status {}", n);
+                Err(string_error::new_err(e.as_str()))
             }
             _ => Ok(false),
         }
@@ -296,5 +301,22 @@ mod tests {
         while !rs.poll().expect("poll") {}
 
         assert_is_true(&mut rs);
+    }
+
+    #[test]
+    fn completed_failing_process() {
+        let sink = std::fs::File::open("/dev/null").unwrap();
+        let proc = subprocess::Exec::cmd("/bin/ls")
+            .arg("no such file or directory")
+            .stdout(subprocess::Redirection::File(sink))
+            .popen()
+            .unwrap();
+
+        let mut rs = Completed::new(proc.pid().unwrap());
+
+        while let Ok(s) = rs.poll() {
+            assert_eq!(false, s);
+        }
+        // success, error returned
     }
 }
