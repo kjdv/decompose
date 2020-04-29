@@ -26,7 +26,7 @@ impl Execution {
         let mut list = executionlist::ExecutionList::from_system(&cfg, output);
 
         let sleep_time = std::time::Duration::from_millis(10);
-        let start = std::time::SystemTime::now();
+        let start = std::time::Instant::now();
 
         while !list.poll()? {
             log::debug!("not ready yet");
@@ -35,7 +35,7 @@ impl Execution {
             if let Some(dur) = cfg.start_timeout {
                 let end = start.add(std::time::Duration::from_secs_f64(dur));
 
-                if std::time::SystemTime::now() >= end {
+                if std::time::Instant::now() >= end {
                     log::error!("timed out waiting to start");
                     return Err(string_error::new_err("timed out waiting to start"));
                 }
