@@ -56,19 +56,19 @@ impl ReadySignal for Manual<'_> {
 }
 
 pub struct Timer<'a> {
-    end: std::time::SystemTime,
-    clock: Box<dyn FnMut() -> std::time::SystemTime + 'a>,
+    end: std::time::Instant,
+    clock: Box<dyn FnMut() -> std::time::Instant + 'a>,
 }
 
 impl<'a> Timer<'a> {
     pub fn new(dur: std::time::Duration) -> Timer<'a> {
-        let clock = Box::new(std::time::SystemTime::now);
+        let clock = Box::new(std::time::Instant::now);
         Timer::new_with_clock(dur, clock)
     }
 
     pub fn new_with_clock(
         dur: std::time::Duration,
-        mut clock: Box<dyn FnMut() -> std::time::SystemTime + 'a>,
+        mut clock: Box<dyn FnMut() -> std::time::Instant + 'a>,
     ) -> Timer<'a> {
         let start = clock();
         Timer {
@@ -229,7 +229,7 @@ mod tests {
 
     #[test]
     fn timer() {
-        let epoch = std::time::SystemTime::now();
+        let epoch = std::time::Instant::now();
         let second = std::time::Duration::from_secs(1);
         let mut now = epoch;
 
