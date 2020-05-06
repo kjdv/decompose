@@ -1,9 +1,12 @@
+extern crate escargot;
+
 use nix::sys::signal::{kill, SIGTERM};
 use std::io::{BufRead, Read, Write};
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Once;
-use subprocess;
+use std::process::{Child, Stdio};
+use std::convert::TryInto;
 
 static LOG_INIT: Once = Once::new();
 static BIN_INIT: Once = Once::new();
@@ -14,12 +17,6 @@ fn bin_root() -> PathBuf {
     let mut path = std::env::current_exe().expect("current exe");
     path.pop();
     path.pop();
-    path
-}
-
-fn decompose_exe() -> PathBuf {
-    let mut path = bin_root();
-    path.push("decompose");
     path
 }
 
@@ -64,9 +61,29 @@ fn link_helpers() {
     }
 }
 
+fn terminate(proc: &mut Child, timeout: f64) -> bool {
+    use std::time::{Instant, Duration};
+
+    let end = Instant::now() + Duration::from_secs_f64(timeout);
+
+    let pid: i32 = proc.id().try_into().unwrap();
+    let _ = kill(nix::unistd::Pid::from_raw(pid), SIGTERM);
+
+    loop {
+        if proc.try_wait().expect("wait").is_some() {
+            return true;
+        }
+
+        if Instant::now() > end {
+            return false;
+        }
+    }
+}
+
 pub struct Fixture {
-    process: subprocess::Popen,
-    reader: std::io::BufReader<std::fs::File>,
+    process: Option<Child>,
+    reader: std::io::BufReader<std::process::ChildStdout>,
+    writer: std::io::BufWriter<std::process::ChildStdin>
 }
 
 #[allow(dead_code)]
@@ -77,25 +94,34 @@ impl Fixture {
         });
         BIN_INIT.call_once(link_helpers);
 
-        let mut popen = subprocess::Exec::cmd(decompose_exe().as_os_str())
+        let mut proc = escargot::CargoBuild::new()
+            .run()
+            .expect("cargo run")
+            .command()
             .arg("--debug")
-            .arg(data_file(config).as_os_str())
-            .stdout(subprocess::Redirection::Pipe)
-            .stderr(subprocess::Redirection::Merge)
-            .stdin(subprocess::Redirection::Pipe)
-            .popen()
-            .expect("popen");
+            .arg(data_file(config))
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("start");
 
-        let reader = std::io::BufReader::new(popen.stdout.take().unwrap());
+        let reader = std::io::BufReader::new(proc.stdout.take().unwrap());
+        let writer = std::io::BufWriter::new(proc.stdin.take().unwrap());
         Fixture {
-            process: popen,
+            process: Some(proc),
             reader,
+            writer
         }
     }
 
     pub fn stop(&mut self) {
-        self.process.terminate().unwrap();
-        self.process.wait().unwrap();
+        if let Some(mut proc) = self.process.take() {
+            if !terminate(&mut proc, 0.1) {
+                proc.kill().unwrap();
+                proc.wait().unwrap();
+            }
+        }
     }
 
     fn next_line(&mut self) -> String {
@@ -172,18 +198,21 @@ impl Fixture {
     }
 
     pub fn send_stdin(&mut self, data: &str) {
-        self.process
-            .stdin
-            .as_ref()
-            .unwrap()
-            .write_all(data.as_bytes())
-            .unwrap();
-        self.process.stdin.as_ref().unwrap().flush().unwrap();
+        self.writer.write_all(data.as_bytes()).expect("write");
+        self.writer.flush().unwrap();
     }
 
     pub fn expect_exited(&mut self) {
-        if let Ok(None) = self.process.wait_timeout(std::time::Duration::from_secs(1)) {
-            assert!(false);
+        use std::time::{Instant, Duration};
+
+        if self.process.is_none() {
+            return;
+        }
+
+        let end = Instant::now() + Duration::from_secs(1);
+
+        while self.process.as_mut().unwrap().try_wait().expect("wait").is_none() {
+            assert!(Instant::now() <= end);
         }
     }
 }
@@ -213,7 +242,7 @@ pub fn call(port: u16, path: &str) -> Result<String> {
 
     stream.write_all(path.as_bytes())?;
     stream.flush()?;
-    
+
     let mut buf = [0; 512];
     let size = stream.read(&mut buf)?;
 
