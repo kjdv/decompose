@@ -290,11 +290,10 @@ mod tests {
 
     #[test]
     fn completed() {
-        let sink = std::fs::File::open("/dev/null").unwrap();
         let proc = subprocess::Exec::cmd("/bin/ls")
-            .stdout(subprocess::Redirection::File(sink))
+            .stdout(subprocess::NullFile)
             .popen()
-            .unwrap();
+            .expect("/bin/ls");
 
         let mut rs = Completed::new(proc.pid().unwrap());
 
