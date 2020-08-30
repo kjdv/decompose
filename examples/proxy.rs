@@ -1,8 +1,8 @@
 extern crate clap;
 extern crate string_error;
 
-use std::net::{TcpListener, TcpStream};
 use std::io::{Read, Write};
+use std::net::{TcpListener, TcpStream};
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 

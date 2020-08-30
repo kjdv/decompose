@@ -1,12 +1,12 @@
 extern crate escargot;
 
 use nix::sys::signal::{kill, SIGTERM};
+use std::convert::TryInto;
 use std::io::{BufRead, Read, Write};
 use std::path::PathBuf;
+use std::process::{Child, Stdio};
 use std::str::FromStr;
 use std::sync::Once;
-use std::process::{Child, Stdio};
-use std::convert::TryInto;
 
 static LOG_INIT: Once = Once::new();
 static BIN_INIT: Once = Once::new();
@@ -62,7 +62,7 @@ fn link_helpers() {
 }
 
 fn terminate(proc: &mut Child, timeout: f64) -> bool {
-    use std::time::{Instant, Duration};
+    use std::time::{Duration, Instant};
 
     let end = Instant::now() + Duration::from_secs_f64(timeout);
 
@@ -83,7 +83,7 @@ fn terminate(proc: &mut Child, timeout: f64) -> bool {
 pub struct Fixture {
     process: Option<Child>,
     reader: std::io::BufReader<std::process::ChildStdout>,
-    writer: std::io::BufWriter<std::process::ChildStdin>
+    writer: std::io::BufWriter<std::process::ChildStdin>,
 }
 
 #[allow(dead_code)]
@@ -111,7 +111,7 @@ impl Fixture {
         Fixture {
             process: Some(proc),
             reader,
-            writer
+            writer,
         }
     }
 
@@ -203,7 +203,7 @@ impl Fixture {
     }
 
     pub fn expect_exited(&mut self) {
-        use std::time::{Instant, Duration};
+        use std::time::{Duration, Instant};
 
         if self.process.is_none() {
             return;
@@ -211,7 +211,14 @@ impl Fixture {
 
         let end = Instant::now() + Duration::from_secs(1);
 
-        while self.process.as_mut().unwrap().try_wait().expect("wait").is_none() {
+        while self
+            .process
+            .as_mut()
+            .unwrap()
+            .try_wait()
+            .expect("wait")
+            .is_none()
+        {
             assert!(Instant::now() <= end);
         }
     }

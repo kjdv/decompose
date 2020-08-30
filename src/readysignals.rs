@@ -40,8 +40,14 @@ impl<'a> Manual<'a> {
         Manual::new_with_prompt(name, prompt)
     }
 
-    pub fn new_with_prompt(name: String, prompt: Box<dyn FnOnce() -> io::Result<()> + 'a>) -> Manual<'a> {
-        Manual { name, prompt: Some(prompt) }
+    pub fn new_with_prompt(
+        name: String,
+        prompt: Box<dyn FnOnce() -> io::Result<()> + 'a>,
+    ) -> Manual<'a> {
+        Manual {
+            name,
+            prompt: Some(prompt),
+        }
     }
 }
 
@@ -170,7 +176,7 @@ impl ReadySignal for Completed {
             wait::WaitStatus::Exited(_, 0) => {
                 self.ready = true;
                 Ok(true)
-            },
+            }
             wait::WaitStatus::Exited(_, n) => {
                 self.ready = true;
                 let e = format!("non-zero exit status {}", n);
