@@ -9,6 +9,7 @@ mod execution;
 mod executionlist;
 mod output;
 mod readysignals;
+mod graph;
 
 fn main() -> Result<(), Box<dyn Error>> {
     do_main().map_err(|e| {
