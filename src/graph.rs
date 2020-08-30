@@ -53,7 +53,7 @@ impl<T: Node + std::fmt::Display + std::fmt::Debug> Graph<T> {
     }
 
     fn validate(graph: &petgraph::Graph<T, i32>) -> Result<()> {
-        assert!(graph.externals(Outgoing).any(|_| true));
+        assert!(graph.externals(Incoming).any(|_| true));
         Ok(())
     }
 }
@@ -118,9 +118,44 @@ mod tests {
 
         let entry_nodes: Vec<String> = graph
             .graph
-            .externals(Outgoing)
+            .externals(Incoming)
             .map(|i| graph.graph[i].name.clone())
             .collect();
         assert_eq!(entry_nodes, vec!["single".to_string()]);
+    }
+
+    #[test]
+    fn construct_ensemble() {
+        let cfg = r#"
+        [[program]]
+        name = "server"
+        argv = ["server"]
+
+        [[program]]
+        name = "proxy"
+        argv = ["proxy"]
+        depends = ["server"]
+        "#;
+
+        let graph = make(cfg);
+
+        let first_neigbours: Vec<String> = graph
+            .graph
+            .externals(Incoming)
+            .map(|i| graph.graph.neighbors(i))
+            .flatten()
+            .map(|i| graph.graph[i].name.clone())
+            .collect();
+        assert_eq!(first_neigbours, vec!["proxy".to_string()]);
+
+        // lets see if we can go the other way as well
+        let first_neigbours: Vec<String> = graph
+            .graph
+            .externals(Outgoing)
+            .map(|i| graph.graph.neighbors_directed(i, Incoming))
+            .flatten()
+            .map(|i| graph.graph[i].name.clone())
+            .collect();
+        assert_eq!(first_neigbours, vec!["server".to_string()]);
     }
 }
