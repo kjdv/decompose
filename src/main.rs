@@ -42,6 +42,11 @@ fn do_main() -> Result<(), Box<dyn Error>> {
                 .short("o")
                 .long("outdir"),
         )
+        .arg(
+            clap::Arg::with_name("dot")
+                .help("write the system dependency graph to stdout, in dot format")
+                .long("dot"),
+        )
         .get_matches();
 
     let level = if args.is_present("debug") {
@@ -55,6 +60,13 @@ fn do_main() -> Result<(), Box<dyn Error>> {
     log::debug!("arguments are config file is {:?}", args);
 
     let sys = config::System::from_file(args.value_of("config").unwrap())?;
+
+    if args.is_present("dot") {
+        let g: graph::Graph<graph::SimpleNode> = graph::Graph::from_config(sys)?;
+        g.dot(&mut std::io::stdout());
+        return Ok(());
+    }
+
     log::info!("system is {:?}", sys);
 
     let output_factory = output::OutputFileFactory::new(args.value_of("outdir").unwrap())?;
