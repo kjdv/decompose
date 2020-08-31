@@ -57,6 +57,10 @@ impl<T: Node> Graph<T> {
         &self.graph[h]
     }
 
+    pub fn node_mut(&mut self, h: NodeHandle) -> &mut T {
+        &mut self.graph[h]
+    }
+
     pub fn start(&self) -> impl Iterator<Item = NodeHandle> + '_ {
         self.graph.externals(Incoming)
     }
@@ -125,17 +129,29 @@ mod tests {
 
     struct TestNode {
         name_: String,
+        ready: bool,
+        stopped: bool,
     }
 
     impl Node for TestNode {
         fn from_config(p: &config::Program) -> Self {
             TestNode {
                 name_: p.name.clone(),
+                ready: false,
+                stopped: false,
             }
         }
 
         fn name(&self) -> &str {
             self.name_.as_str()
+        }
+
+        fn is_ready(&self) -> bool {
+            self.ready
+        }
+
+        fn is_stopped(&self) -> bool {
+            self.stopped
         }
     }
 
@@ -196,5 +212,84 @@ mod tests {
             .map(|h| graph.node(h).name())
             .collect();
         assert_eq!(first_neigbours, vec!["server"]);
+    }
+
+    fn names<'a>(g: &'a Graph<TestNode>, hs: &Vec<NodeHandle>) -> Vec<&'a str> {
+        hs.iter().map(|h| g.node(*h).name()).collect()
+    }
+
+    #[test]
+    fn expand() {
+        let cfg = r#"
+        [[program]]
+        name = "a"
+        argv = ["a"]
+
+        [[program]]
+        name = "b"
+        argv = ["b"]
+
+        [[program]]
+        name = "c"
+        argv = ["c"]
+        depends = ["a", "b"]
+
+        [[program]]
+        name = "d"
+        argv = ["d"]
+        depends = ["c"]
+        "#;
+
+        let mut graph = make(cfg);
+
+        let start_nodes: Vec<NodeHandle> = graph.start().collect();
+        assert_eq!(names(&graph, &start_nodes), vec!["a", "b"]);
+
+        graph.node_mut(start_nodes[0]).ready = true;
+        assert_eq!(0, graph.expand(start_nodes[0]).count());
+
+        graph.node_mut(start_nodes[1]).ready = true;
+        let expanded_nodes: Vec<NodeHandle> = graph.expand(start_nodes[1]).collect();
+        assert_eq!(names(&graph, &expanded_nodes), vec!["c"]);
+
+        graph.node_mut(expanded_nodes[0]).ready = true;
+        let expanded_nodes: Vec<NodeHandle> = graph.expand(expanded_nodes[0]).collect();
+        assert_eq!(names(&graph, &expanded_nodes), vec!["d"]);
+    }
+
+    #[test]
+    fn expand_back() {
+        let cfg = r#"
+        [[program]]
+        name = "a"
+        argv = ["a"]
+
+        [[program]]
+        name = "b"
+        argv = ["b"]
+
+        [[program]]
+        name = "c"
+        argv = ["c"]
+        depends = ["a", "b"]
+
+        [[program]]
+        name = "d"
+        argv = ["d"]
+        depends = ["c"]
+        "#;
+
+        let mut graph = make(cfg);
+
+        let end_nodes: Vec<NodeHandle> = graph.stop().collect();
+        assert_eq!(names(&graph, &end_nodes), vec!["d"]);
+
+        graph.node_mut(end_nodes[0]).stopped = true;
+        let expanded: Vec<NodeHandle> = graph.expand_back(end_nodes[0]).collect();
+        assert_eq!(names(&graph, &expanded), vec!["c"]);
+
+        graph.node_mut(expanded[0]).stopped = true;
+        let expanded: Vec<NodeHandle> = graph.expand_back(expanded[0]).collect();
+        assert_eq!(names(&graph, &expanded), vec!["b", "a"]);
     }
 }
