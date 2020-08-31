@@ -6,19 +6,24 @@ use super::*;
 use std::collections::HashMap;
 
 use petgraph::dot::{Config, Dot};
-use petgraph::Direction::{Incoming, Outgoing};
+use petgraph::Direction::Incoming;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
 pub trait Node {
     fn from_config(p: &config::Program) -> Self;
+    fn is_ready(&self) -> bool {
+        true
+    }
 }
 
 pub struct Graph<T: Node> {
     graph: petgraph::Graph<T, i32>,
 }
 
-impl<T: Node + std::fmt::Display + std::fmt::Debug> Graph<T> {
+type NodeHandle = petgraph::prelude::NodeIndex<u32>;
+
+impl<T: Node + std::fmt::Display> Graph<T> {
     pub fn from_config(sys: config::System) -> Result<Graph<T>> {
         let mut graph = petgraph::Graph::new();
 
@@ -44,6 +49,25 @@ impl<T: Node + std::fmt::Display + std::fmt::Debug> Graph<T> {
         Ok(Graph { graph })
     }
 
+    pub fn node(&self, h: NodeHandle) -> &T {
+        &self.graph[h]
+    }
+
+    pub fn start(&self) -> impl Iterator<Item = NodeHandle> + '_ {
+        self.graph.externals(Incoming)
+    }
+
+    pub fn expand(&self, h: NodeHandle) -> impl Iterator<Item = NodeHandle> + '_ {
+        let n = self.node(h);
+        assert!(n.is_ready());
+
+        self.graph.neighbors(h).filter(move |i| {
+            self.graph
+                .neighbors_directed(*i, Incoming)
+                .all(|j| self.node(j).is_ready())
+        })
+    }
+
     pub fn dot(&self, w: &mut impl std::io::Write) {
         w.write_fmt(format_args!(
             "{}",
@@ -58,7 +82,6 @@ impl<T: Node + std::fmt::Display + std::fmt::Debug> Graph<T> {
     }
 }
 
-#[derive(Debug)]
 pub struct SimpleNode {
     name: String,
 }
@@ -81,7 +104,6 @@ impl std::fmt::Display for SimpleNode {
 mod tests {
     use super::*;
 
-    #[derive(Debug)]
     struct TestNode {
         name: String,
     }
@@ -119,7 +141,7 @@ mod tests {
         let entry_nodes: Vec<String> = graph
             .graph
             .externals(Incoming)
-            .map(|i| graph.graph[i].name.clone())
+            .map(|h| graph.node(h).name.clone())
             .collect();
         assert_eq!(entry_nodes, vec!["single".to_string()]);
     }
@@ -144,17 +166,17 @@ mod tests {
             .externals(Incoming)
             .map(|i| graph.graph.neighbors(i))
             .flatten()
-            .map(|i| graph.graph[i].name.clone())
+            .map(|h| graph.node(h).name.clone())
             .collect();
         assert_eq!(first_neigbours, vec!["proxy".to_string()]);
 
         // lets see if we can go the other way as well
         let first_neigbours: Vec<String> = graph
             .graph
-            .externals(Outgoing)
+            .externals(petgraph::Direction::Outgoing)
             .map(|i| graph.graph.neighbors_directed(i, Incoming))
             .flatten()
-            .map(|i| graph.graph[i].name.clone())
+            .map(|h| graph.node(h).name.clone())
             .collect();
         assert_eq!(first_neigbours, vec!["server".to_string()]);
     }
