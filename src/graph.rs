@@ -6,24 +6,28 @@ use super::*;
 use std::collections::HashMap;
 
 use petgraph::dot::{Config, Dot};
-use petgraph::Direction::Incoming;
+use petgraph::Direction::{Incoming, Outgoing};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
 pub trait Node {
     fn from_config(p: &config::Program) -> Self;
+    fn name(&self) -> &str;
     fn is_ready(&self) -> bool {
+        true
+    }
+    fn is_stopped(&self) -> bool {
         true
     }
 }
 
 pub struct Graph<T: Node> {
-    graph: petgraph::Graph<T, i32>,
+    graph: petgraph::Graph<T, ()>,
 }
 
 type NodeHandle = petgraph::prelude::NodeIndex<u32>;
 
-impl<T: Node + std::fmt::Display> Graph<T> {
+impl<T: Node> Graph<T> {
     pub fn from_config(sys: config::System) -> Result<Graph<T>> {
         let mut graph = petgraph::Graph::new();
 
@@ -40,7 +44,7 @@ impl<T: Node + std::fmt::Display> Graph<T> {
                     .get(dep.as_str())
                     .ok_or_else(|| string_error::into_err(format!("No such program: {}", dep)))?;
                 let to = mapping.get(prog.name.as_str()).unwrap();
-                graph.add_edge(*from, *to, 0);
+                graph.add_edge(*from, *to, ());
             }
         }
 
@@ -57,46 +61,61 @@ impl<T: Node + std::fmt::Display> Graph<T> {
         self.graph.externals(Incoming)
     }
 
-    pub fn expand(&self, h: NodeHandle) -> impl Iterator<Item = NodeHandle> + '_ {
-        let n = self.node(h);
-        assert!(n.is_ready());
+    pub fn stop(&self) -> impl Iterator<Item = NodeHandle> + '_ {
+        self.graph.externals(Outgoing)
+    }
 
-        self.graph.neighbors(h).filter(move |i| {
-            self.graph
-                .neighbors_directed(*i, Incoming)
-                .all(|j| self.node(j).is_ready())
-        })
+    pub fn expand(&self, h: NodeHandle) -> impl Iterator<Item = NodeHandle> + '_ {
+        assert!(self.node(h).is_ready());
+
+        self.dependees(h)
+            .filter(move |i| self.dependencies(*i).all(|j| self.node(j).is_ready()))
+    }
+
+    pub fn expand_back(&self, h: NodeHandle) -> impl Iterator<Item = NodeHandle> + '_ {
+        assert!(self.node(h).is_stopped());
+
+        self.dependencies(h)
+            .filter(move |i| self.dependees(*i).all(|j| self.node(j).is_stopped()))
     }
 
     pub fn dot(&self, w: &mut impl std::io::Write) {
+        let m = self.graph.map(|_, n| n.name(), |_, _| 0);
+
         w.write_fmt(format_args!(
             "{}",
-            Dot::with_config(&self.graph, &[Config::EdgeNoLabel])
+            Dot::with_config(&m, &[Config::EdgeNoLabel])
         ))
         .expect("write");
     }
 
-    fn validate(graph: &petgraph::Graph<T, i32>) -> Result<()> {
+    fn dependencies(&self, h: NodeHandle) -> impl Iterator<Item = NodeHandle> + '_ {
+        self.graph.neighbors_directed(h, Incoming)
+    }
+
+    fn dependees(&self, h: NodeHandle) -> impl Iterator<Item = NodeHandle> + '_ {
+        self.graph.neighbors(h)
+    }
+
+    fn validate(graph: &petgraph::Graph<T, ()>) -> Result<()> {
         assert!(graph.externals(Incoming).any(|_| true));
         Ok(())
     }
 }
 
 pub struct SimpleNode {
-    name: String,
+    name_: String,
 }
 
 impl Node for SimpleNode {
     fn from_config(p: &config::Program) -> Self {
         SimpleNode {
-            name: p.name.clone(),
+            name_: p.name.clone(),
         }
     }
-}
 
-impl std::fmt::Display for SimpleNode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.name)
+    fn name(&self) -> &str {
+        self.name_.as_str()
     }
 }
 
@@ -105,20 +124,18 @@ mod tests {
     use super::*;
 
     struct TestNode {
-        name: String,
+        name_: String,
     }
 
     impl Node for TestNode {
         fn from_config(p: &config::Program) -> Self {
             TestNode {
-                name: p.name.clone(),
+                name_: p.name.clone(),
             }
         }
-    }
 
-    impl std::fmt::Display for TestNode {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write!(f, "{}", self.name)
+        fn name(&self) -> &str {
+            self.name_.as_str()
         }
     }
 
@@ -138,12 +155,12 @@ mod tests {
         let graph = make(cfg);
         assert_eq!(1, graph.graph.node_count());
 
-        let entry_nodes: Vec<String> = graph
+        let entry_nodes: Vec<&str> = graph
             .graph
             .externals(Incoming)
-            .map(|h| graph.node(h).name.clone())
+            .map(|h| graph.node(h).name())
             .collect();
-        assert_eq!(entry_nodes, vec!["single".to_string()]);
+        assert_eq!(entry_nodes, vec!["single"]);
     }
 
     #[test]
@@ -161,23 +178,23 @@ mod tests {
 
         let graph = make(cfg);
 
-        let first_neigbours: Vec<String> = graph
+        let first_neigbours: Vec<&str> = graph
             .graph
             .externals(Incoming)
             .map(|i| graph.graph.neighbors(i))
             .flatten()
-            .map(|h| graph.node(h).name.clone())
+            .map(|h| graph.node(h).name())
             .collect();
-        assert_eq!(first_neigbours, vec!["proxy".to_string()]);
+        assert_eq!(first_neigbours, vec!["proxy"]);
 
         // lets see if we can go the other way as well
-        let first_neigbours: Vec<String> = graph
+        let first_neigbours: Vec<&str> = graph
             .graph
-            .externals(petgraph::Direction::Outgoing)
+            .externals(Outgoing)
             .map(|i| graph.graph.neighbors_directed(i, Incoming))
             .flatten()
-            .map(|h| graph.node(h).name.clone())
+            .map(|h| graph.node(h).name())
             .collect();
-        assert_eq!(first_neigbours, vec!["server".to_string()]);
+        assert_eq!(first_neigbours, vec!["server"]);
     }
 }
