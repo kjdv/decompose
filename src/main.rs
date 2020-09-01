@@ -8,6 +8,7 @@ mod config;
 mod execution;
 mod executionlist;
 mod graph;
+mod executor;
 mod output;
 mod readysignals;
 
