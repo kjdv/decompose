@@ -97,7 +97,16 @@ impl Graph {
     }
 
     fn validate(graph: &petgraph::Graph<config::Program, ()>) -> Result<()> {
-        assert!(graph.externals(Incoming).any(|_| true));
+        if !graph.externals(Incoming).next().is_some() {
+            return Err(string_error::static_err(
+                "system graph has no dependency-free root nodes",
+            ));
+        }
+
+        if petgraph::algo::is_cyclic_directed(graph) {
+            return Err(string_error::static_err("system graph contains cycles"));
+        }
+
         Ok(())
     }
 }
@@ -164,6 +173,29 @@ mod tests {
             .map(|h| graph.node(h).name.clone())
             .collect();
         assert_eq!(first_neigbours, vec!["server"]);
+    }
+
+    #[test]
+    fn cyclic_graph_fails_to_construct() {
+        let toml = r#"
+        [[program]]
+        name = "a"
+        argv = ["a"]
+
+        [[program]]
+        name = "b"
+        argv = ["b"]
+        depends = ["c"]
+
+        [[program]]
+        name = "c"
+        argv = ["c"]
+        depends = ["b"]
+        "#;
+
+        let cfg = config::System::from_toml(toml).unwrap();
+        let g = Graph::from_config(cfg);
+        assert!(g.is_err());
     }
 
     fn names(g: &Graph, hs: &Vec<NodeHandle>) -> Vec<String> {
