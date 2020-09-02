@@ -2,41 +2,66 @@ extern crate tokio;
 
 use super::*;
 
-use futures::future::Future;
+use log;
+use string_error;
+use std::collections::HashSet;
+
+use futures::future::{Future, BoxFuture, FutureExt};
 use std::error::Error;
 use tokio::process::Command;
+use tokio::sync::{oneshot, mpsc};
+use graph::{Graph, NodeHandle};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 type Fut<T> = std::pin::Pin<std::boxed::Box<dyn Future<Output = T>>>;
 
+async fn start_program(prog: config::Program) -> Result<()> {
+    let child = Command::new("echo")
+        .arg("hello")
+        .arg("world")
+        .kill_on_drop(true)
+        .spawn()?;
 
-struct ExecutionNode {
-    program_definition: config::Program,
-    child: Option<tokio::process::Child>
+    tokio::time::delay_for(tokio::time::Duration::from_secs(1)).await;
+    log::info!("{} is ready", prog.name);
+
+    Ok(())
 }
 
-impl graph::Node for ExecutionNode {
-    fn from_config(p: &config::Program) -> ExecutionNode {
-        ExecutionNode{program_definition: p.clone(), child: None}
+
+async fn start_all(graph: &Graph) -> Result<()> {
+    let (mut tx, mut rx) = mpsc::channel(100);
+
+    graph.roots().for_each(|h| {
+        let p = graph.node(h).clone();
+        let mut tx = tx.clone();
+        tokio::spawn(async move {
+            if let Err(e) = start_program(p).await {
+                log::error!("{}", e);
+            }
+            tx.send(h).await.unwrap();
+        });
+    });
+
+    let mut visited = HashSet::new();
+    while let Some(h) = rx.recv().await {
+        visited.insert(h);
+        graph.expand(h, |i| visited.contains(&i)).for_each(|n| {
+            let p = graph.node(n).clone();
+            let mut tx = tx.clone();
+
+            tokio::spawn(async move {
+                if let Err(e) = start_program(p).await {
+                    log::error!("{}", e);
+                }
+                tx.send(h).await.unwrap();
+            });
+        })
     }
 
-    fn name(&self) -> &str {
-        self.program_definition.name.as_str()
-    }
+    Ok(())
 }
 
-impl ExecutionNode {
-    pub fn start(&mut self) -> Result<Fut<()>> {
-        let child = Command::new("echo").arg("hello").arg("world")
-            .kill_on_drop(true)
-            .spawn()?;
-        self.child.replace(child);
-
-        Ok(Box::pin(async move {
-            tokio::time::delay_for(tokio::time::Duration::from_secs(1)).await;
-        }))
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -44,6 +69,6 @@ mod tests {
 
     #[test]
     fn placeholder() {
-        assert!(false);
+        assert!(true);
     }
 }

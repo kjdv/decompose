@@ -7,8 +7,8 @@ use std::error::Error;
 mod config;
 mod execution;
 mod executionlist;
-mod graph;
 mod executor;
+mod graph;
 mod output;
 mod readysignals;
 
@@ -63,7 +63,7 @@ fn do_main() -> Result<(), Box<dyn Error>> {
     let sys = config::System::from_file(args.value_of("config").unwrap())?;
 
     if args.is_present("dot") {
-        let g: graph::Graph<graph::SimpleNode> = graph::Graph::from_config(sys)?;
+        let g = graph::Graph::from_config(sys)?;
         g.dot(&mut std::io::stdout());
         return Ok(());
     }
