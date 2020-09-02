@@ -3,19 +3,40 @@ extern crate tokio;
 use super::*;
 
 use log;
-use string_error;
 use std::collections::HashSet;
 
-use futures::future::{Future, BoxFuture, FutureExt};
-use std::error::Error;
-use tokio::process::Command;
-use tokio::sync::{oneshot, mpsc};
+use futures::future::Future;
 use graph::{Graph, NodeHandle};
+use tokio::process::Command;
+use tokio::sync::mpsc;
 
-type Result<T> = std::result::Result<T, Box<dyn Error>>;
-type Fut<T> = std::pin::Pin<std::boxed::Box<dyn Future<Output = T>>>;
+type Result<T> = std::result::Result<T, tokio::io::Error>;
 
-async fn start_program(prog: config::Program) -> Result<()> {
+async fn start_all(graph: &Graph) -> Result<()> {
+    let (mut tx, mut rx) = mpsc::channel(100);
+
+    graph.roots().for_each(|h| {
+        let p = graph.node(h).clone();
+        let tx = tx.clone();
+
+        tokio::spawn(start_program(h, p, tx));
+    });
+
+    let mut visited = HashSet::new();
+    while let Some(h) = rx.recv().await {
+        visited.insert(h);
+        graph.expand(h, |i| visited.contains(&i)).for_each(|n| {
+            let p = graph.node(n).clone();
+            let tx = tx.clone();
+
+            tokio::spawn(start_program(h, p, tx));
+        })
+    }
+
+    Ok(())
+}
+
+async fn do_start_program(prog: config::Program) -> Result<()> {
     let child = Command::new("echo")
         .arg("hello")
         .arg("world")
@@ -28,40 +49,16 @@ async fn start_program(prog: config::Program) -> Result<()> {
     Ok(())
 }
 
-
-async fn start_all(graph: &Graph) -> Result<()> {
-    let (mut tx, mut rx) = mpsc::channel(100);
-
-    graph.roots().for_each(|h| {
-        let p = graph.node(h).clone();
-        let mut tx = tx.clone();
-        tokio::spawn(async move {
-            if let Err(e) = start_program(p).await {
-                log::error!("{}", e);
-            }
-            tx.send(h).await.unwrap();
-        });
-    });
-
-    let mut visited = HashSet::new();
-    while let Some(h) = rx.recv().await {
-        visited.insert(h);
-        graph.expand(h, |i| visited.contains(&i)).for_each(|n| {
-            let p = graph.node(n).clone();
-            let mut tx = tx.clone();
-
-            tokio::spawn(async move {
-                if let Err(e) = start_program(p).await {
-                    log::error!("{}", e);
-                }
-                tx.send(h).await.unwrap();
-            });
-        })
-    }
-
-    Ok(())
+async fn start_program(
+    h: NodeHandle,
+    prog: config::Program,
+    mut completed: mpsc::Sender<NodeHandle>,
+) {
+    match do_start_program(prog).await {
+        Ok(()) => completed.send(h).await.expect("channel error"),
+        Err(e) => log::error!("{}", e),
+    };
 }
-
 
 #[cfg(test)]
 mod tests {
