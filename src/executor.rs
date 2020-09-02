@@ -29,7 +29,7 @@ async fn start_all(graph: &Graph) -> Result<()> {
             let p = graph.node(n).clone();
             let tx = tx.clone();
 
-            tokio::spawn(start_program(h, p, tx));
+            tokio::spawn(start_program(n, p, tx));
         })
     }
 
