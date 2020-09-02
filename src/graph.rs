@@ -198,7 +198,7 @@ mod tests {
         assert!(g.is_err());
     }
 
-    fn names(g: &Graph, hs: &Vec<NodeHandle>) -> Vec<String> {
+    fn names(g: &Graph, hs: &[NodeHandle]) -> Vec<String> {
         hs.iter().map(|h| g.node(*h).name.clone()).collect()
     }
 
