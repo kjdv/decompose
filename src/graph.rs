@@ -222,6 +222,11 @@ mod tests {
         name = "d"
         argv = ["d"]
         depends = ["c"]
+
+        [[program]]
+        name = "e"
+        argv = ["e"]
+        depends = ["c"]
         "#;
 
         let graph = make(cfg);
@@ -248,7 +253,7 @@ mod tests {
         let expanded_nodes: Vec<NodeHandle> = graph
             .expand(expanded_nodes[0], |h| visited.contains(&h))
             .collect();
-        assert_eq!(names(&graph, &expanded_nodes), vec!["d"]);
+        assert_eq!(names(&graph, &expanded_nodes), vec!["e", "d"]);
     }
 
     #[test]

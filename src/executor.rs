@@ -15,7 +15,8 @@ type Process = Box<tokio::process::Child>;
 
 pub struct Executor {
     dependency_graph: Graph,
-    running: HashMap<NodeHandle, Process>,
+    running: HashMap<NodeHandle, Option<Process>>,
+    terminate_timeout: std::time::Duration,
 }
 
 impl Executor {
@@ -25,6 +26,7 @@ impl Executor {
         Ok(Executor {
             dependency_graph: graph,
             running: HashMap::new(),
+            terminate_timeout: std::time::Duration::from_secs_f64(cfg.terminate_timeout),
         })
     }
 
@@ -41,7 +43,7 @@ impl Executor {
         while let Some(msg) = rx.recv().await {
             match msg {
                 Ok((h, p)) => {
-                    self.running.insert(h, p);
+                    self.running.insert(h, Some(p));
 
                     self.dependency_graph
                         .expand(h, |i| self.running.contains_key(&i))
@@ -60,6 +62,35 @@ impl Executor {
 
         Ok(())
     }
+
+    pub async fn stop(&mut self) {
+        let (tx, mut rx) = mpsc::channel(100);
+
+        let leaves: Vec<_> = self.dependency_graph.leaves().collect();
+        leaves.iter().for_each(|h| {
+            let op = self.running.get_mut(&h).expect("no process for node");
+            if let Some(p) = op.take() {
+                tokio::spawn(stop_program(*h, p, self.terminate_timeout, tx.clone()));
+            }
+        });
+
+        while let Some(h) = rx.recv().await {
+            let expanded: Vec<_> = self
+                .dependency_graph
+                .expand_back(h, |i| !self.running.contains_key(&i))
+                .collect();
+            expanded.iter().for_each(|h| {
+                let op = self.running.get_mut(&h).expect("no process for node");
+                if let Some(p) = op.take() {
+                    tokio::spawn(stop_program(*h, p, self.terminate_timeout, tx.clone()));
+                }
+            });
+
+            self.running.remove(&h);
+        }
+
+        assert!(self.running.is_empty());
+    }
 }
 
 async fn start_program(
@@ -68,7 +99,6 @@ async fn start_program(
     mut completed: mpsc::Sender<TokResult<(NodeHandle, Process)>>,
 ) {
     let msg = do_start_program(prog).await.map(|p| (h, p));
-
     completed.send(msg).await.expect("channel error");
 }
 
@@ -83,6 +113,21 @@ async fn do_start_program(prog: config::Program) -> TokResult<Process> {
     log::info!("{} is ready", prog.name);
 
     Ok(Box::new(child))
+}
+
+async fn stop_program(
+    h: NodeHandle,
+    proc: Process,
+    timeout: std::time::Duration,
+    mut completed: mpsc::Sender<NodeHandle>,
+) {
+    do_stop(proc, timeout).await;
+    completed.send(h).await.expect("channel error");
+}
+
+async fn do_stop(proc: Process, timeout: std::time::Duration) {
+    // todo: graceful stop
+    // for now: killed on drop
 }
 
 #[cfg(test)]
