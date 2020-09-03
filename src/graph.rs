@@ -42,6 +42,10 @@ impl Graph {
         Ok(Graph { graph })
     }
 
+    pub fn len(&self) -> usize {
+        self.graph.node_count()
+    }
+
     pub fn node(&self, h: NodeHandle) -> &config::Program {
         &self.graph[h]
     }

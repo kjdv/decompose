@@ -58,6 +58,10 @@ impl Executor {
                     return Err(e.into());
                 }
             };
+
+            if self.running.len() == self.dependency_graph.len() {
+                break;
+            }
         }
 
         Ok(())
@@ -79,6 +83,7 @@ impl Executor {
                 .dependency_graph
                 .expand_back(h, |i| !self.running.contains_key(&i))
                 .collect();
+
             expanded.iter().for_each(|h| {
                 let op = self.running.get_mut(&h).expect("no process for node");
                 if let Some(p) = op.take() {
@@ -87,6 +92,10 @@ impl Executor {
             });
 
             self.running.remove(&h);
+
+            if self.running.is_empty() {
+                break;
+            }
         }
 
         assert!(self.running.is_empty());
