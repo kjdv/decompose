@@ -17,7 +17,7 @@ pub struct Graph {
 pub type NodeHandle = petgraph::prelude::NodeIndex<u32>;
 
 impl Graph {
-    pub fn from_config(sys: config::System) -> Result<Graph> {
+    pub fn from_config(sys: &config::System) -> Result<Graph> {
         let mut graph = petgraph::Graph::new();
 
         let mut mapping = HashMap::new();
@@ -118,7 +118,7 @@ mod tests {
 
     fn make(toml: &str) -> Graph {
         let cfg = config::System::from_toml(toml).unwrap();
-        Graph::from_config(cfg).unwrap()
+        Graph::from_config(&cfg).unwrap()
     }
 
     #[test]
@@ -194,7 +194,7 @@ mod tests {
         "#;
 
         let cfg = config::System::from_toml(toml).unwrap();
-        let g = Graph::from_config(cfg);
+        let g = Graph::from_config(&cfg);
         assert!(g.is_err());
     }
 

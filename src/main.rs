@@ -63,7 +63,7 @@ fn do_main() -> Result<(), Box<dyn Error>> {
     let sys = config::System::from_file(args.value_of("config").unwrap())?;
 
     if args.is_present("dot") {
-        let g = graph::Graph::from_config(sys)?;
+        let g = graph::Graph::from_config(&sys)?;
         g.dot(&mut std::io::stdout());
         return Ok(());
     }
