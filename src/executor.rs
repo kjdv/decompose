@@ -93,6 +93,27 @@ impl Executor {
     }
 }
 
+impl Drop for Executor {
+    fn drop(&mut self) {
+        // optimize: don't bother constructing a runtime if everything is stopped already
+        if !self.running.is_empty() {
+            run(self.stop());
+        }
+    }
+}
+
+pub fn run<F: futures::future::Future>(f: F) -> F::Output {
+    let mut rt = tokio::runtime::Builder::new()
+        .basic_scheduler()
+        .enable_all()
+        .build()
+        .expect("runtime");
+
+    let result = rt.block_on(f);
+    rt.shutdown_timeout(std::time::Duration::from_secs(1));
+    result
+}
+
 async fn start_program(
     h: NodeHandle,
     prog: config::Program,
