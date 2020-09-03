@@ -7,6 +7,8 @@ use std::collections::HashMap;
 
 use graph::{Graph, NodeHandle};
 use tokio::process::Command;
+use tokio::signal;
+use tokio::signal::unix::{signal, SignalKind};
 use tokio::sync::mpsc;
 
 type TokResult<T> = std::result::Result<T, tokio::io::Error>;
@@ -67,6 +69,14 @@ impl Executor {
         Ok(())
     }
 
+    pub async fn wait(&self) -> Result<()> {
+        let r = tokio::select! {
+            x = self.wait_for_signal(SignalKind::interrupt()) => x,
+            x = self.wait_for_signal(SignalKind::terminate()) => x,
+        };
+        r.map_err(|e| e.into())
+    }
+
     pub async fn stop(&mut self) {
         let (tx, mut rx) = mpsc::channel(100);
 
@@ -99,6 +109,13 @@ impl Executor {
         }
 
         assert!(self.running.is_empty());
+    }
+
+    async fn wait_for_signal(&self, kind: SignalKind) -> TokResult<()> {
+        let mut sig = signal(kind)?;
+        sig.recv().await;
+        log::info!("received signal {:?}", kind);
+        Ok(())
     }
 }
 
