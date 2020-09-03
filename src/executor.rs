@@ -11,7 +11,7 @@ use tokio::process::Command;
 use tokio::sync::mpsc;
 
 type Result<T> = std::result::Result<T, tokio::io::Error>;
-type Process = Arc<tokio::process::Child>;
+type Process = Box<tokio::process::Child>;
 
 pub async fn start_all(graph: &Graph) -> Result<HashMap<NodeHandle, Process>> {
     let mut result = HashMap::new();
@@ -49,7 +49,7 @@ async fn do_start_program(prog: config::Program) -> Result<Process> {
     tokio::time::delay_for(tokio::time::Duration::from_secs(1)).await;
     log::info!("{} is ready", prog.name);
 
-    Ok(Arc::new(child))
+    Ok(Box::new(child))
 }
 
 async fn start_program(
