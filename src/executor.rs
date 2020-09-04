@@ -185,35 +185,61 @@ async fn stop_program(
 
 async fn do_stop(proc: Process, timeout: std::time::Duration) {
     let pid = proc.id();
+    match terminate_wait(proc, timeout).await {
+        Ok(status) => log::debug!("{} completed with status {}", pid, status),
+        Err(e) => log::warn!("sigterm failed: {}, killed", e),
+    };
+}
+
+fn is_alive(pid: u32) -> bool {
+    let pid = nix::unistd::Pid::from_raw(pid as i32);
+    nix_signal::kill(pid, None).is_ok()
+}
+
+fn terminate(pid: u32) -> Result<()> {
+    let pid = nix::unistd::Pid::from_raw(pid as i32);
     let sig = nix_signal::Signal::SIGTERM;
 
-    log::debug!("sending SIGTERM to {}", pid);
-    match nix_signal::kill(nix::unistd::Pid::from_raw(pid as i32), sig) {
-        Ok(()) => {
-            tokio::select! {
-                x = proc.wait_with_output() => {
-                    match x {
-                        Ok(o) => log::debug!("{} exited with status {}", pid, o.status),
-                        Err(e) => log::warn!("{}", e),
-                    };
-                },
-                _ = tokio::time::delay_for(timeout) => {
-                    log::warn!("timed out waiting for {} to close, killing", pid);
-                }
-            };
+    nix_signal::kill(pid, sig).map_err(|e| e.into())
+}
+
+async fn terminate_wait(
+    proc: Process,
+    timeout: std::time::Duration,
+) -> Result<std::process::ExitStatus> {
+    let pid = proc.id();
+    terminate(pid)?;
+
+    tokio::select! {
+        x = proc.wait_with_output() => {
+            match x {
+                Ok(o) => Ok(o.status),
+                Err(e) => Err(e.into()),
+            }
         }
-        Err(e) => {
-            log::warn!("failed to send SIGTERM to {}: {}", pid, e);
-        }
-    };
+        _ = tokio::time::delay_for(timeout) => Err(string_error::into_err(format!("timeout while waiting for {} to shut down", pid))),
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    // use super::*;
+    use super::*;
 
-    #[test]
-    fn placeholder() {
-        assert!(true);
+    #[tokio::test]
+    async fn is_alive_and_stop() {
+        let proc = Box::new(
+            Command::new("/bin/cat")
+                .kill_on_drop(true)
+                .spawn()
+                .expect("cat"),
+        );
+        let pid = proc.id();
+
+        assert!(is_alive(pid));
+
+        let timeout = std::time::Duration::from_millis(1);
+        do_stop(proc, timeout).await;
+
+        assert!(!is_alive(pid));
     }
 }
