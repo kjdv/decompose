@@ -75,12 +75,25 @@ impl Executor {
         Ok(())
     }
 
-    pub async fn run(&self) -> Result<()> {
-        let r = tokio::select! {
-            x = wait_for_signal(SignalKind::interrupt()) => x,
-            x = wait_for_signal(SignalKind::terminate()) => x,
-        };
-        r.map_err(|e| e.into())
+    pub async fn run(&mut self) -> Result<()> {
+        loop {
+            let r = tokio::select! {
+                _ = wait_for_signal(SignalKind::child()) => {
+                    self.check_alive();
+                    Ok(!self.running.is_empty())
+                },
+                x = wait_for_signal(SignalKind::interrupt()) => x.map(|_| false),
+                x = wait_for_signal(SignalKind::terminate()) => x.map(|_| false),
+            };
+            match r {
+                Ok(true) => (),
+                Ok(false) => {
+                    log::info!("no running processes left");
+                    return Ok(())
+                },
+                Err(e) => return Err(e.into()),
+            }
+        }
     }
 
     pub async fn stop(&mut self) {
@@ -88,11 +101,18 @@ impl Executor {
 
         let leaves: Vec<_> = self.dependency_graph.leaves().collect();
         leaves.iter().for_each(|h| {
-            let op = self.running.get_mut(&h).expect("no process for node");
-            if let Some(p) = op.take() {
-                log::info!("stopping program {}", self.dependency_graph.node(*h).name);
+            match self.running.get_mut(&h) {
+                Some(op) => {
+                    if let Some(p) = op.take() {
+                        log::info!("stopping program {}", self.dependency_graph.node(*h).name);
 
-                tokio::spawn(stop_program(*h, p, self.terminate_timeout, tx.clone()));
+                        tokio::spawn(stop_program(*h, p, self.terminate_timeout, tx.clone()));
+                    }
+                },
+                None => {
+                    log::debug!("process for handle already stopped");
+                    tokio::spawn(dummy_stop(*h, tx.clone()));
+                }
             }
         });
 
@@ -103,11 +123,18 @@ impl Executor {
                 .collect();
 
             expanded.iter().for_each(|h| {
-                let op = self.running.get_mut(&h).expect("no process for node");
-                if let Some(p) = op.take() {
-                    log::info!("stopping program {}", self.dependency_graph.node(*h).name);
-
-                    tokio::spawn(stop_program(*h, p, self.terminate_timeout, tx.clone()));
+                match self.running.get_mut(&h) {
+                    Some(op) => {
+                        if let Some(p) = op.take() {
+                            log::info!("stopping program {}", self.dependency_graph.node(*h).name);
+    
+                            tokio::spawn(stop_program(*h, p, self.terminate_timeout, tx.clone()));
+                        }
+                    },
+                    None => {
+                        log::debug!("process for handle already stopped");
+                        tokio::spawn(dummy_stop(*h, tx.clone()));
+                    }
                 }
             });
 
@@ -119,6 +146,19 @@ impl Executor {
         }
 
         assert!(self.running.is_empty());
+    }
+
+    fn check_alive(&mut self) {
+        let alive = |p: &Process| {
+            if p.is_alive() {
+                log::debug!("{} still alive", p);
+                true
+            } else {
+                log::info!("{} stopped", p);
+                false
+            }
+        };
+        self.running.retain(|_, v| v.as_ref().map_or(false, alive));
     }
 }
 
@@ -230,9 +270,18 @@ async fn do_stop(proc: Process, timeout: std::time::Duration) {
     assert!(!is_alive(info.pid), "terminate_wait failed to kill on drop");
 }
 
+async fn dummy_stop(h: NodeHandle, mut completed: mpsc::Sender<NodeHandle>) {
+    completed.send(h).await.expect("channel error");
+}
+
 fn is_alive(pid: u32) -> bool {
+    use nix::sys::wait;
+
     let pid = nix::unistd::Pid::from_raw(pid as i32);
-    nix_signal::kill(pid, None).is_ok()
+    match wait::waitpid(pid, Some(wait::WaitPidFlag::WNOHANG)) {
+        Ok(wait::WaitStatus::StillAlive) => true,
+        _ => false
+    }
 }
 
 fn terminate(pid: u32) -> Result<()> {
