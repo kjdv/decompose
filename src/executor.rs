@@ -16,7 +16,6 @@ use tokio::sync::mpsc;
 
 type TokResult<T> = std::result::Result<T, tokio::io::Error>;
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
-type Process = Box<tokio::process::Child>;
 
 pub struct Executor {
     dependency_graph: Graph,
@@ -137,6 +136,44 @@ impl Drop for Executor {
     }
 }
 
+#[derive(Debug)]
+struct Process {
+    proc: Box<tokio::process::Child>,
+    info: ProcessInfo,
+}
+
+#[derive(Debug, Clone)]
+struct ProcessInfo {
+    name: String,
+    pid: u32,
+}
+
+impl Process {
+    fn new(proc: tokio::process::Child, name: String) -> Process {
+        let pid = proc.id();
+        Process {
+            proc: Box::new(proc),
+            info: ProcessInfo { name, pid },
+        }
+    }
+
+    fn is_alive(&self) -> bool {
+        is_alive(self.info.pid)
+    }
+}
+
+impl std::fmt::Display for Process {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        self.info.fmt(f)
+    }
+}
+
+impl std::fmt::Display for ProcessInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}:{}", self.name, self.pid)
+    }
+}
+
 pub fn run<F: futures::future::Future>(f: F) -> F::Output {
     let mut rt = tokio::runtime::Builder::new()
         .basic_scheduler()
@@ -167,10 +204,15 @@ async fn do_start_program(prog: config::Program) -> TokResult<Process> {
         .stderr(Stdio::piped())
         .kill_on_drop(true)
         .spawn()?;
+    let proc = Process::new(child, prog.name);
+
+    log::info!("{} started", proc.info);
 
     tokio::time::delay_for(tokio::time::Duration::from_secs(1)).await;
 
-    Ok(Box::new(child))
+    log::info!("{} ready", proc.info);
+
+    Ok(proc)
 }
 
 async fn stop_program(
@@ -184,11 +226,13 @@ async fn stop_program(
 }
 
 async fn do_stop(proc: Process, timeout: std::time::Duration) {
-    let pid = proc.id();
+    let info = proc.info.clone();
     match terminate_wait(proc, timeout).await {
-        Ok(status) => log::debug!("{} completed with status {}", pid, status),
-        Err(e) => log::warn!("sigterm failed: {}, killed", e),
+        Ok(status) => log::info!("{} stopped with status {}", info, status),
+        Err(e) => log::warn!("{} killed, failed to terminate: {}", info, e),
     };
+
+    assert!(!is_alive(info.pid), "terminate_wait failed to kill on drop");
 }
 
 fn is_alive(pid: u32) -> bool {
@@ -207,39 +251,60 @@ async fn terminate_wait(
     proc: Process,
     timeout: std::time::Duration,
 ) -> Result<std::process::ExitStatus> {
-    let pid = proc.id();
+    let pid = proc.info.pid;
     terminate(pid)?;
 
     tokio::select! {
-        x = proc.wait_with_output() => {
+        x = proc.proc.wait_with_output() => {
             match x {
                 Ok(o) => Ok(o.status),
                 Err(e) => Err(e.into()),
             }
         }
-        _ = tokio::time::delay_for(timeout) => Err(string_error::into_err(format!("timeout while waiting for {} to shut down", pid))),
+        _ = tokio::time::delay_for(timeout) => Err(string_error::static_err("timeout")),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    extern crate regex;
 
     #[tokio::test]
     async fn is_alive_and_stop() {
-        let proc = Box::new(
+        let proc = Process::new(
             Command::new("/bin/cat")
                 .kill_on_drop(true)
                 .spawn()
                 .expect("cat"),
+            "cat".to_string(),
         );
-        let pid = proc.id();
+        let pid = proc.info.pid;
 
-        assert!(is_alive(pid));
+        assert!(proc.is_alive());
 
         let timeout = std::time::Duration::from_millis(1);
         do_stop(proc, timeout).await;
 
         assert!(!is_alive(pid));
+    }
+
+    #[tokio::test]
+    async fn format_process() {
+        let re = regex::Regex::new("catname:[0-9]+").expect("re");
+
+        let proc = Process::new(
+            Command::new("/bin/cat")
+                .kill_on_drop(true)
+                .spawn()
+                .expect("cat"),
+            "catname".to_string(),
+        );
+
+        let fmt = format!("{}", proc.info);
+        assert!(re.is_match(fmt.as_str()));
+
+        let fmt = format!("{}", proc);
+        assert!(re.is_match(fmt.as_str()));
     }
 }
