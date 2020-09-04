@@ -35,6 +35,8 @@ impl Executor {
     }
 
     pub async fn start(&mut self) -> Result<()> {
+        log::info!("starting execution");
+
         let (tx, mut rx) = mpsc::channel(100);
 
         self.dependency_graph.roots().for_each(|h| {
@@ -80,7 +82,13 @@ impl Executor {
             let r = tokio::select! {
                 _ = wait_for_signal(SignalKind::child()) => {
                     self.check_alive();
-                    Ok(!self.running.is_empty())
+
+                    if self.running.is_empty() {
+                        log::info!("no running processes left");
+                        Ok(false)
+                    } else {
+                        Ok(true)
+                    }
                 },
                 x = wait_for_signal(SignalKind::interrupt()) => x.map(|_| false),
                 x = wait_for_signal(SignalKind::terminate()) => x.map(|_| false),
@@ -88,9 +96,8 @@ impl Executor {
             match r {
                 Ok(true) => (),
                 Ok(false) => {
-                    log::info!("no running processes left");
-                    return Ok(())
-                },
+                    return Ok(());
+                }
                 Err(e) => return Err(e.into()),
             }
         }
@@ -101,19 +108,7 @@ impl Executor {
 
         let leaves: Vec<_> = self.dependency_graph.leaves().collect();
         leaves.iter().for_each(|h| {
-            match self.running.get_mut(&h) {
-                Some(op) => {
-                    if let Some(p) = op.take() {
-                        log::info!("stopping program {}", self.dependency_graph.node(*h).name);
-
-                        tokio::spawn(stop_program(*h, p, self.terminate_timeout, tx.clone()));
-                    }
-                },
-                None => {
-                    log::debug!("process for handle already stopped");
-                    tokio::spawn(dummy_stop(*h, tx.clone()));
-                }
-            }
+            self.send_stop(*h, tx.clone());
         });
 
         while let Some(h) = rx.recv().await {
@@ -123,19 +118,7 @@ impl Executor {
                 .collect();
 
             expanded.iter().for_each(|h| {
-                match self.running.get_mut(&h) {
-                    Some(op) => {
-                        if let Some(p) = op.take() {
-                            log::info!("stopping program {}", self.dependency_graph.node(*h).name);
-    
-                            tokio::spawn(stop_program(*h, p, self.terminate_timeout, tx.clone()));
-                        }
-                    },
-                    None => {
-                        log::debug!("process for handle already stopped");
-                        tokio::spawn(dummy_stop(*h, tx.clone()));
-                    }
-                }
+                self.send_stop(*h, tx.clone());
             });
 
             self.running.remove(&h);
@@ -146,6 +129,23 @@ impl Executor {
         }
 
         assert!(self.running.is_empty());
+        log::info!("stopping execution");
+    }
+
+    fn send_stop(&mut self, h: NodeHandle, tx: mpsc::Sender<NodeHandle>) {
+        match self.running.get_mut(&h) {
+            Some(op) => {
+                if let Some(p) = op.take() {
+                    log::info!("stopping program {}", self.dependency_graph.node(h).name);
+
+                    tokio::spawn(stop_program(h, p, self.terminate_timeout, tx));
+                }
+            }
+            None => {
+                log::debug!("process for handle already stopped");
+                tokio::spawn(dummy_stop(h, tx));
+            }
+        }
     }
 
     fn check_alive(&mut self) {
@@ -235,8 +235,8 @@ async fn do_start_program(prog: config::Program) -> TokResult<Process> {
         .args(&prog.argv.as_slice()[1..])
         .envs(&prog.env)
         .current_dir(prog.cwd)
-        // .stdout(Stdio::piped())
-        // .stderr(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .kill_on_drop(true)
         .spawn()?;
     let proc = Process::new(child, prog.name);
@@ -263,11 +263,15 @@ async fn stop_program(
 async fn do_stop(proc: Process, timeout: std::time::Duration) {
     let info = proc.info.clone();
     match terminate_wait(proc, timeout).await {
-        Ok(status) => log::info!("{} stopped with status {}", info, status),
-        Err(e) => log::warn!("{} killed, failed to terminate: {}", info, e),
+        Ok(status) => {
+            log::debug!("{} exit status {}", info, status);
+            log::info!("{} terminated", info);
+        }
+        Err(e) => {
+            log::debug!("{} failed to terminate: {}", info, e);
+            log::warn!("{} killed", info);
+        }
     };
-
-    assert!(!is_alive(info.pid), "terminate_wait failed to kill on drop");
 }
 
 async fn dummy_stop(h: NodeHandle, mut completed: mpsc::Sender<NodeHandle>) {
@@ -280,7 +284,7 @@ fn is_alive(pid: u32) -> bool {
     let pid = nix::unistd::Pid::from_raw(pid as i32);
     match wait::waitpid(pid, Some(wait::WaitPidFlag::WNOHANG)) {
         Ok(wait::WaitStatus::StillAlive) => true,
-        _ => false
+        _ => false,
     }
 }
 
@@ -299,7 +303,7 @@ async fn wait_for_signal(kind: SignalKind) -> TokResult<()> {
 }
 
 async fn terminate_wait(
-    proc: Process,
+    mut proc: Process,
     timeout: std::time::Duration,
 ) -> Result<std::process::ExitStatus> {
     let pid = proc.info.pid;
@@ -311,7 +315,7 @@ async fn terminate_wait(
                 Ok(o) => Ok(o.status),
                 Err(e) => Err(e.into()),
             }
-        }
+        },
         _ = tokio::time::delay_for(timeout) => Err(string_error::static_err("timeout")),
     }
 }

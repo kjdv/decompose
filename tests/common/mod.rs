@@ -127,7 +127,7 @@ impl Fixture {
     fn next_line(&mut self) -> String {
         let mut line = String::new();
         let n = self.reader.read_line(&mut line).expect("no input");
-        assert_ne!(0, n);
+        //assert_ne!(0, n);
         print!("{}", line);
         line
     }
@@ -153,16 +153,16 @@ impl Fixture {
     }
 
     pub fn expect_start(&mut self) {
-        self.expect_line(r"\[decompose::execution\] starting execution");
+        self.expect_line(r"\[decompose::executor\] starting execution");
     }
 
     pub fn expect_stop(&mut self) {
-        self.expect_line(r"\[decompose::execution\] stopping execution");
+        self.expect_line(r"\[decompose::executor\] stopping execution");
     }
 
     pub fn expect_program_starts(&mut self) -> ProgramInfo {
         let caps =
-            self.expect_line(r"\[decompose::execution\] ([a-zA-Z][a-zA-Z0-9]+):([0-9]+) started");
+            self.expect_line(r"\[decompose::executor\] ([a-zA-Z][a-zA-Z0-9]+):([0-9]+) started");
         ProgramInfo {
             name: caps.get(1).unwrap().to_string(),
             pid: caps.get(2).unwrap().to_string().parse().unwrap(),
@@ -171,7 +171,7 @@ impl Fixture {
 
     pub fn expect_program_ready(&mut self) -> ProgramInfo {
         let caps =
-            self.expect_line(r"\[decompose::execution\] ([a-zA-Z][a-zA-Z0-9]+):([0-9]+) ready");
+            self.expect_line(r"\[decompose::executor\] ([a-zA-Z][a-zA-Z0-9]+):([0-9]+) ready");
         ProgramInfo {
             name: caps.get(1).unwrap().to_string(),
             pid: caps.get(2).unwrap().to_string().parse().unwrap(),
@@ -179,17 +179,17 @@ impl Fixture {
     }
 
     pub fn expect_program_dies(&mut self, prog: &ProgramInfo) {
-        let re = format!("\\[decompose::execution\\] {} died", *prog);
+        let re = format!("\\[decompose::executor\\] {} stopped", *prog);
         self.expect_line(re.as_str());
     }
 
     pub fn expect_program_terminates(&mut self, prog: &ProgramInfo) {
-        let re = format!("\\[decompose::execution\\] {} terminated", *prog);
+        let re = format!("\\[decompose::executor\\] {} terminated", *prog);
         self.expect_line(re.as_str());
     }
 
     pub fn expect_program_is_killed(&mut self, prog: &ProgramInfo) {
-        let re = format!("\\[decompose::execution\\] {} killed", *prog);
+        let re = format!("\\[decompose::executor\\] {} killed", *prog);
         self.expect_line(re.as_str());
     }
 

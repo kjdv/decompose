@@ -1,3 +1,4 @@
+/*
 mod common;
 
 mod ensemble {
@@ -60,3 +61,4 @@ mod ensemble {
         assert!(body.ends_with("target/testrun"));
     }
 }
+*/

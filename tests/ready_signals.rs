@@ -1,3 +1,4 @@
+/*
 mod common;
 
 mod readysignals {
@@ -59,3 +60,4 @@ mod readysignals {
         assert!(status.is_ok());
     }
 }
+*/
