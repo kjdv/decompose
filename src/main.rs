@@ -70,9 +70,17 @@ fn do_main() -> Result<(), Box<dyn Error>> {
 
     log::info!("system is {:?}", sys);
 
-    let output_factory = output::OutputFileFactory::new(args.value_of("outdir").unwrap())?;
-    let mut exec = execution::Execution::from_config(sys, output_factory)?;
-    exec.wait();
+    // let output_factory = output::OutputFileFactory::new(args.value_of("outdir").unwrap())?;
+    // let mut exec = execution::Execution::from_config(sys, output_factory)?;
+    // exec.wait();
+
+    let mut exec = executor::Executor::from_config(&sys)?;
+    executor::run(async move {
+        exec.start().await?;
+        let res = exec.run().await;
+        exec.stop().await;
+        res
+    })?;
 
     Ok(())
 }

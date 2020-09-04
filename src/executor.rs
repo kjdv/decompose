@@ -48,6 +48,7 @@ impl Executor {
         while let Some(msg) = rx.recv().await {
             match msg {
                 Ok((h, p)) => {
+                    log::debug!("recs ready for program {}", p);
                     self.running.insert(h, Some(p));
 
                     self.dependency_graph
@@ -61,6 +62,7 @@ impl Executor {
                         });
                 }
                 Err(e) => {
+                    log::warn!("failed to start: {}", e);
                     return Err(e.into());
                 }
             };
@@ -73,7 +75,7 @@ impl Executor {
         Ok(())
     }
 
-    pub async fn wait(&self) -> Result<()> {
+    pub async fn run(&self) -> Result<()> {
         let r = tokio::select! {
             x = wait_for_signal(SignalKind::interrupt()) => x,
             x = wait_for_signal(SignalKind::terminate()) => x,
@@ -193,8 +195,8 @@ async fn do_start_program(prog: config::Program) -> TokResult<Process> {
         .args(&prog.argv.as_slice()[1..])
         .envs(&prog.env)
         .current_dir(prog.cwd)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        // .stdout(Stdio::piped())
+        // .stderr(Stdio::piped())
         .kill_on_drop(true)
         .spawn()?;
     let proc = Process::new(child, prog.name);
