@@ -36,7 +36,7 @@ mod start_stop {
         f.expect_stop();
     }
 
-    /* 
+    /*
     #[test]
     fn errors_on_start_timeout() {
         let mut f = Fixture::new("timeout.yaml");
