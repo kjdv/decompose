@@ -137,7 +137,7 @@ impl Executor {
         match self.running.get_mut(&h) {
             Some(op) => {
                 if let Some(p) = op.take() {
-                    log::info!("stopping program {}", self.dependency_graph.node(h).name);
+                    log::debug!("stopping program {}", p);
 
                     tokio::spawn(stop_program(h, p, self.terminate_timeout, tx));
                 }
@@ -174,7 +174,7 @@ impl Drop for Executor {
 
 #[derive(Debug)]
 struct Process {
-    proc: Box<tokio::process::Child>,
+    proc: Option<Box<tokio::process::Child>>,
     info: ProcessInfo,
 }
 
@@ -185,11 +185,19 @@ struct ProcessInfo {
 }
 
 impl Process {
-    fn new(proc: tokio::process::Child, name: String) -> Process {
+    fn new(proc: Option<tokio::process::Child>, info: ProcessInfo) -> Process {
+        Process {
+            proc: proc.map(Box::new),
+            info: info,
+        }
+    }
+
+    #[allow(dead_code)]
+    fn new_with_name(proc: tokio::process::Child, name: String) -> Process {
         let pid = proc.id();
         Process {
-            proc: Box::new(proc),
-            info: ProcessInfo { name, pid },
+            proc: Some(Box::new(proc)),
+            info: ProcessInfo { name: name, pid },
         }
     }
 
@@ -256,32 +264,37 @@ async fn do_start_program(prog: config::Program) -> TokResult<Process> {
         .stderr(Stdio::piped())
         .kill_on_drop(true)
         .spawn()?;
-    let proc = Process::new(child, prog.name);
+    let info = ProcessInfo {
+        name: prog.name,
+        pid: child.id(),
+    };
+    let mut child = Some(child);
 
-    log::info!("{} started", proc.info);
+    log::info!("{} started", info);
 
     let rs = match prog.ready {
         ReadySignal::Nothing => readysignals::nothing().await?,
-        ReadySignal::Manual => readysignals::manual(proc.info.name.as_str()).await?,
+        ReadySignal::Manual => readysignals::manual(info.name.as_str()).await?,
         ReadySignal::Timer(s) => {
             let dur = Duration::from_secs_f64(s);
-            log::debug!("waiting {}s for {}", s, proc);
+            log::debug!("waiting {}s for {}", s, info);
             readysignals::timer(dur).await?
         }
         ReadySignal::Port(port) => {
-            log::debug!("waiting for port {} for {}", port, proc);
+            log::debug!("waiting for port {} for {}", port, info);
             readysignals::port(port).await?
         }
+        ReadySignal::Completed => readysignals::completed(child.take().unwrap()).await?,
         _ => readysignals::nothing().await?,
     };
 
     match rs {
         true => {
-            log::info!("{} ready", proc.info);
-            Ok(proc)
+            log::info!("{} ready", info);
+            Ok(Process::new(child, info))
         }
         false => {
-            let msg = format!("{} not ready", proc.info);
+            let msg = format!("{} not ready", info);
             log::error!("{}", msg);
             Err(Error::new(ErrorKind::Other, msg))
         }
@@ -301,9 +314,12 @@ async fn stop_program(
 async fn do_stop(proc: Process, timeout: Duration) {
     let info = proc.info.clone();
     match terminate_wait(proc, timeout).await {
-        Ok(status) => {
+        Ok(Some(status)) => {
             log::debug!("{} exit status {}", info, status);
             log::info!("{} terminated", info);
+        }
+        Ok(None) => {
+            log::debug!("{} nothing to terminate", info);
         }
         Err(e) => {
             log::debug!("{} failed to terminate: {}", info, e);
@@ -342,18 +358,25 @@ async fn wait_for_signal(kind: SignalKind) -> TokResult<()> {
     Ok(())
 }
 
-async fn terminate_wait(proc: Process, timeout: Duration) -> Result<std::process::ExitStatus> {
-    let pid = proc.info.pid;
-    terminate(pid)?;
+async fn terminate_wait(
+    mut proc: Process,
+    timeout: Duration,
+) -> Result<Option<std::process::ExitStatus>> {
+    if let Some(p) = proc.proc.take() {
+        let pid = proc.info.pid;
+        terminate(pid)?;
 
-    tokio::select! {
-        x = proc.proc.wait_with_output() => {
-            match x {
-                Ok(o) => Ok(o.status),
-                Err(e) => Err(e.into()),
-            }
-        },
-        _ = tokio::time::delay_for(timeout) => Err(string_error::static_err("timeout")),
+        tokio::select! {
+            x = p.wait_with_output() => {
+                match x {
+                    Ok(o) => Ok(Some(o.status)),
+                    Err(e) => Err(e.into()),
+                }
+            },
+            _ = tokio::time::delay_for(timeout) => Err(string_error::static_err("timeout")),
+        }
+    } else {
+        Ok(None)
     }
 }
 
@@ -364,7 +387,7 @@ mod tests {
 
     #[tokio::test]
     async fn is_alive_and_stop() {
-        let proc = Process::new(
+        let proc = Process::new_with_name(
             Command::new("/bin/cat")
                 .kill_on_drop(true)
                 .spawn()
@@ -385,7 +408,7 @@ mod tests {
     async fn format_process() {
         let re = regex::Regex::new("catname:[0-9]+").expect("re");
 
-        let proc = Process::new(
+        let proc = Process::new_with_name(
             Command::new("/bin/cat")
                 .kill_on_drop(true)
                 .spawn()

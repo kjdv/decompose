@@ -47,6 +47,12 @@ async fn host_and_port(host: &str, port: u16) -> Result {
     }
 }
 
+pub async fn completed(proc: tokio::process::Child) -> Result {
+    proc.wait_with_output()
+        .await
+        .map(|output| output.status.success())
+}
+
 /*
 pub struct Stdout {
     regex: regex::Regex,
@@ -177,37 +183,29 @@ mod tests {
 
         assert_is_true(&mut rs);
     }
+    */
 
-    #[test]
-    fn completed() {
-        let proc = subprocess::Exec::cmd("/bin/ls")
-            .stdout(subprocess::NullFile)
-            .popen()
+    #[tokio::test]
+    async fn test_completed() {
+        let proc = tokio::process::Command::new("/bin/ls")
+            .stdout(std::process::Stdio::piped())
+            .spawn()
             .expect("/bin/ls");
 
-        let mut rs = Completed::new(proc.pid().unwrap());
-
-        while !rs.poll().expect("poll") {}
-
-        assert_is_true(&mut rs);
+        let result = completed(proc).await.expect("completed");
+        assert!(result);
     }
 
-    #[test]
-    fn completed_failing_process() {
-        let sink = std::fs::File::open("/dev/null").unwrap();
-        let proc = subprocess::Exec::cmd("/bin/ls")
+    #[tokio::test]
+    async fn completed_failing_process() {
+        let proc = tokio::process::Command::new("/bin/ls")
             .arg("no such file or directory")
-            .stdout(subprocess::Redirection::File(sink))
-            .popen()
-            .unwrap();
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .expect("/bin/ls");
 
-        let mut rs = Completed::new(proc.pid().unwrap());
-
-        while let Ok(s) = rs.poll() {
-            assert_eq!(false, s);
-        }
-        // success, error returned
+        let result = completed(proc).await.expect("completed");
+        assert!(!result);
     }
-
-    */
 }

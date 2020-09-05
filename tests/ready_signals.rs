@@ -48,6 +48,8 @@ mod readysignals {
         f.expect_program_ready();
     }
 
+    */
+
     #[test]
     fn completed() {
         let mut f = Fixture::new("rs_completed.yaml");
@@ -61,6 +63,4 @@ mod readysignals {
         let status = call(9093, "hello\n");
         assert!(status.is_ok());
     }
-
-    */
 }
