@@ -285,7 +285,10 @@ async fn do_start_program(prog: config::Program) -> TokResult<Process> {
             readysignals::port(port).await?
         }
         ReadySignal::Completed => readysignals::completed(child.take().unwrap()).await?,
-        _ => readysignals::nothing().await?,
+        ReadySignal::Stdout(re) => {
+            let stdout = child.as_mut().unwrap().stdout.as_mut().unwrap();
+            readysignals::output(stdout, re).await?
+        }
     };
 
     match rs {

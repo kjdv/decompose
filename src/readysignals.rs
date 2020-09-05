@@ -3,7 +3,7 @@ extern crate nix;
 extern crate regex;
 extern crate tokio;
 
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 
 type Result = std::result::Result<bool, tokio::io::Error>;
 
@@ -53,88 +53,30 @@ pub async fn completed(proc: tokio::process::Child) -> Result {
         .map(|output| output.status.success())
 }
 
-/*
-pub struct Stdout {
-    regex: regex::Regex,
-    reader: Option<std::io::BufReader<std::fs::File>>,
-}
+pub async fn output<R: AsyncRead + std::marker::Unpin>(reader: R, re: String) -> Result {
+    use tokio::io;
+    use tokio::io::AsyncBufReadExt;
 
-impl Stdout {
-    pub fn new(filename: std::path::PathBuf, re: String) -> Result<Stdout> {
-        let re = regex::Regex::new(re.as_str())?;
-        let file = std::fs::File::open(filename)?;
-        let reader = std::io::BufReader::new(file);
+    let re = regex::Regex::new(re.as_str())
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{}", e)))?;
 
-        Ok(Stdout {
-            regex: re,
-            reader: Some(reader),
-        })
-    }
-}
+    let mut reader = io::BufReader::new(reader).lines();
 
-impl ReadySignal for Stdout {
-    fn poll(&mut self) -> Result<bool> {
-        if let Some(mut reader) = self.reader.take() {
-            let mut line = String::new();
-            reader.read_line(&mut line)?;
-
-            let rn: &[_] = &['\r', '\n'];
-            let line = line.trim_end_matches(rn);
-
-            if !self.regex.is_match(line) {
-                self.reader.replace(reader);
-                return Ok(false);
-            }
-        }
-        Ok(true)
-    }
-}
-
-pub struct Completed {
-    pid: nix::unistd::Pid,
-    ready: bool,
-}
-
-impl Completed {
-    pub fn new(pid: u32) -> Completed {
-        Completed {
-            pid: nix::unistd::Pid::from_raw(pid as i32),
-            ready: false,
-        }
-    }
-}
-
-impl ReadySignal for Completed {
-    fn poll(&mut self) -> Result<bool> {
-        use nix::sys::wait;
-
-        if self.ready {
+    while let Some(line) = reader.next_line().await? {
+        if re.is_match(line.as_str()) {
             return Ok(true);
         }
-
-        let status = wait::waitpid(self.pid, None)?;
-        match status {
-            wait::WaitStatus::Exited(_, 0) => {
-                self.ready = true;
-                Ok(true)
-            }
-            wait::WaitStatus::Exited(_, n) => {
-                self.ready = true;
-                let e = format!("non-zero exit status {}", n);
-                Err(string_error::new_err(e.as_str()))
-            }
-            _ => Ok(false),
-        }
     }
-}
 
-*/
+    Ok(false)
+}
 
 #[cfg(test)]
 mod tests {
     extern crate tokio;
 
     use super::*;
+    use futures::task::Poll;
 
     #[tokio::test]
     async fn test_nothing() {
@@ -151,39 +93,40 @@ mod tests {
         assert!(result);
     }
 
-    /*
-
-    #[test]
-    fn stdout() {
-        let tempdir = tempfile::Builder::new().tempdir().expect("tempir");
-        let filename = "test.file";
-
-        let mut buf = tempdir.path().to_path_buf();
-        buf.push(filename);
-        let mut f = std::fs::File::create(buf).expect("open for write");
-
-        let mut buf = tempdir.path().to_path_buf();
-        buf.push(filename);
-        let mut rs = Stdout::new(buf, "^ready [0-9]+$".to_string()).expect("valid regex");
-
-        assert_is_false(&mut rs);
-
-        f.write_all(b"something\n").unwrap();
-        f.flush().unwrap();
-
-        assert_is_false(&mut rs);
-
-        f.write_all(b"ready 123\n").unwrap();
-        f.flush().unwrap();
-
-        assert_is_true(&mut rs);
-
-        f.write_all(b"more stuff\n").unwrap();
-        f.flush().unwrap();
-
-        assert_is_true(&mut rs);
+    struct StringReader {
+        cursor: std::io::Cursor<String>,
     }
-    */
+
+    impl StringReader {
+        fn new(buf: String) -> StringReader {
+            StringReader{
+                cursor: std::io::Cursor::new(buf)
+            }
+        }
+    }
+
+    impl AsyncRead for StringReader {
+        fn poll_read(mut self: std::pin::Pin<&mut Self>, _: &mut futures::task::Context, mut buf: &mut [u8]) -> Poll<std::io::Result<usize>> {
+            let r = std::io::Read::read(&mut self.cursor, &mut buf);
+            Poll::Ready(r)
+        }
+    }
+
+    #[tokio::test]
+    async fn test_output_good() {
+        let reader = StringReader::new("aap\nprogram:123 running\nnoot\n".to_string());
+
+        let result = output(reader, "^program:[0-9]+.*$".to_string()).await.expect("re");
+        assert!(result);
+    }
+
+    #[tokio::test]
+    async fn test_output_bad() {
+        let reader = StringReader::new("aap\nnoot\nmies".to_string());
+
+        let result = output(reader, "^program:[0-9]+.*$".to_string()).await.expect("re");
+        assert!(!result);
+    }
 
     #[tokio::test]
     async fn test_completed() {

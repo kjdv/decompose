@@ -39,16 +39,11 @@ mod readysignals {
         assert!(status.is_ok());
     }
 
-    /*
-
-
     #[test]
     fn stdout() {
         let mut f = Fixture::new("rs_stdout.yaml");
         f.expect_program_ready();
     }
-
-    */
 
     #[test]
     fn completed() {
