@@ -14,7 +14,7 @@ pub async fn nothing() -> Result {
 pub async fn manual(name: &str) -> Result {
     let mut stdout = tokio::io::stdout();
     stdout
-        .write(format!("Manually waiting for {}, press enter", name).as_bytes())
+        .write(format!("Manually waiting for {}, press enter\n", name).as_bytes())
         .await?;
     stdout.flush().await?;
 
@@ -24,47 +24,12 @@ pub async fn manual(name: &str) -> Result {
     Ok(true)
 }
 
+pub async fn timer(dur: std::time::Duration) -> Result {
+    tokio::time::delay_for(dur).await;
+    Ok(true)
+}
+
 /*
-impl ReadySignal for Manual<'_> {
-    fn poll(&mut self) -> Result<bool> {
-        if let Some(p) = self.prompt.take() {
-            println!("Manually waiting for {}, press enter", self.name);
-            p()?;
-        }
-        Ok(true)
-    }
-}
-
-pub struct Timer<'a> {
-    end: std::time::Instant,
-    clock: Box<dyn FnMut() -> std::time::Instant + 'a>,
-}
-
-impl<'a> Timer<'a> {
-    pub fn new(dur: std::time::Duration) -> Timer<'a> {
-        let clock = Box::new(std::time::Instant::now);
-        Timer::new_with_clock(dur, clock)
-    }
-
-    pub fn new_with_clock(
-        dur: std::time::Duration,
-        mut clock: Box<dyn FnMut() -> std::time::Instant + 'a>,
-    ) -> Timer<'a> {
-        let start = clock();
-        Timer {
-            end: start.add(dur),
-            clock,
-        }
-    }
-}
-
-impl ReadySignal for Timer<'_> {
-    fn poll(&mut self) -> Result<bool> {
-        let now = (self.clock)();
-        Ok(now >= self.end)
-    }
-}
-
 pub struct Port {
     address: String,
 }
@@ -176,41 +141,6 @@ mod tests {
     }
 
     /*
-    #[test]
-    fn manual_ok() {
-        let prompt = Box::new(|| Ok(()));
-
-        let mut rs = Manual::new_with_prompt("test".to_string(), prompt);
-        assert_is_true(&mut rs);
-    }
-
-    #[test]
-    fn manual_err() {
-        let prompt = Box::new(|| Err(io::Error::new(io::ErrorKind::InvalidInput, "blah")));
-
-        let mut rs = Manual::new_with_prompt("test".to_string(), prompt);
-        assert_is_err(&mut rs);
-    }
-
-    #[test]
-    fn timer() {
-        let epoch = std::time::Instant::now();
-        let second = std::time::Duration::from_secs(1);
-        let mut now = epoch;
-
-        let clock = Box::new(|| {
-            now.add_assign(second);
-            now
-        });
-
-        let mut rs = Timer::new_with_clock(std::time::Duration::from_secs(3), clock);
-
-        assert_is_false(&mut rs);
-        assert_is_false(&mut rs);
-        assert_is_true(&mut rs);
-        assert_is_true(&mut rs);
-    }
-
     #[test]
     fn port() {
         let mut rs = Port::new(9092);

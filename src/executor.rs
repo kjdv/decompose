@@ -10,8 +10,7 @@ use graph::{Graph, NodeHandle};
 use nix::sys::signal as nix_signal;
 use std::process::Stdio;
 use tokio::process::Command;
-use tokio::signal;
-use tokio::signal::unix::{signal, SignalKind};
+use tokio::signal::unix::SignalKind;
 use tokio::sync::mpsc;
 
 type TokResult<T> = std::result::Result<T, tokio::io::Error>;
@@ -50,7 +49,6 @@ impl Executor {
         while let Some(msg) = rx.recv().await {
             match msg {
                 Ok((h, p)) => {
-                    log::debug!("recs ready for program {}", p);
                     self.running.insert(h, Some(p));
 
                     self.dependency_graph
@@ -233,7 +231,7 @@ async fn start_program(
 async fn do_start_program(prog: config::Program) -> TokResult<Process> {
     use config::ReadySignal;
     use tokio::io::{Error, ErrorKind};
-   
+
     let child = Command::new(&prog.argv[0])
         .args(&prog.argv.as_slice()[1..])
         .envs(&prog.env)
@@ -246,22 +244,27 @@ async fn do_start_program(prog: config::Program) -> TokResult<Process> {
 
     log::info!("{} started", proc.info);
 
-    let rs =match prog.ready {
-        ReadySignal::Nothing => readysignals::nothing(),
-        _ => readysignals::nothing(),
-   };
+    let rs = match prog.ready {
+        ReadySignal::Nothing => readysignals::nothing().await?,
+        ReadySignal::Manual => readysignals::manual(proc.info.name.as_str()).await?,
+        ReadySignal::Timer(s) => {
+            let dur = std::time::Duration::from_secs_f64(s);
+            log::debug!("waiting {}s for {}", s, proc);
+            readysignals::timer(dur).await?
+        }
+        _ => readysignals::nothing().await?,
+    };
 
-    match rs.await {
-        Ok(true) => {
+    match rs {
+        true => {
             log::info!("{} ready", proc.info);
             Ok(proc)
-        },
-        Ok(false) => {
+        }
+        false => {
             let msg = format!("{} not ready", proc.info);
             log::error!("{}", msg);
             Err(Error::new(ErrorKind::Other, msg))
         }
-        Err(e) => Err(e),
     }
 }
 
@@ -311,6 +314,8 @@ fn terminate(pid: u32) -> Result<()> {
 }
 
 async fn wait_for_signal(kind: SignalKind) -> TokResult<()> {
+    use tokio::signal::unix::signal;
+
     let mut sig = signal(kind)?;
     sig.recv().await;
     log::info!("received signal {:?}", kind);

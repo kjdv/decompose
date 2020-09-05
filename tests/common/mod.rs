@@ -127,7 +127,7 @@ impl Fixture {
     fn next_line(&mut self) -> String {
         let mut line = String::new();
         let n = self.reader.read_line(&mut line).expect("no input");
-        //assert_ne!(0, n);
+        assert_ne!(0, n);
         print!("{}", line);
         line
     }
