@@ -48,28 +48,6 @@ async fn host_and_port(host: &str, port: u16) -> Result {
 }
 
 /*
-pub struct Port {
-    address: String,
-}
-
-impl Port {
-    pub fn new(port: u16) -> Port {
-        Port::new_with_host("127.0.0.1", port)
-    }
-
-    pub fn new_with_host(host: &str, port: u16) -> Port {
-        Port {
-            address: format!("{}:{}", host, port),
-        }
-    }
-}
-
-impl ReadySignal for Port {
-    fn poll(&mut self) -> Result<bool> {
-        Ok(std::net::TcpStream::connect(&self.address).is_ok())
-    }
-}
-
 pub struct Stdout {
     regex: regex::Regex,
     reader: Option<std::io::BufReader<std::fs::File>>,

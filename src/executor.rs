@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use graph::{Graph, NodeHandle};
 use nix::sys::signal as nix_signal;
 use std::process::Stdio;
+use std::time::Duration;
 use tokio::process::Command;
 use tokio::signal::unix::SignalKind;
 use tokio::sync::mpsc;
@@ -19,7 +20,8 @@ type Result<T> = std::result::Result<T, Box<dyn Error>>;
 pub struct Executor {
     dependency_graph: Graph,
     running: HashMap<NodeHandle, Option<Process>>,
-    terminate_timeout: std::time::Duration,
+    start_timeout: Option<Duration>,
+    terminate_timeout: Duration,
 }
 
 impl Executor {
@@ -29,7 +31,8 @@ impl Executor {
         Ok(Executor {
             dependency_graph: graph,
             running: HashMap::new(),
-            terminate_timeout: std::time::Duration::from_secs_f64(cfg.terminate_timeout),
+            start_timeout: cfg.start_timeout.map(Duration::from_secs_f64),
+            terminate_timeout: Duration::from_secs_f64(cfg.terminate_timeout),
         })
     }
 
@@ -43,7 +46,7 @@ impl Executor {
             let tx = tx.clone();
 
             log::info!("starting program {}", p.name);
-            tokio::spawn(start_program(h, p, tx));
+            tokio::spawn(start_program(h, p, self.start_timeout, tx));
         });
 
         while let Some(msg) = rx.recv().await {
@@ -58,7 +61,7 @@ impl Executor {
                             let tx = tx.clone();
 
                             log::info!("starting program {}", p.name);
-                            tokio::spawn(start_program(n, p, tx));
+                            tokio::spawn(start_program(n, p, self.start_timeout, tx));
                         });
                 }
                 Err(e) => {
@@ -215,16 +218,29 @@ pub fn run<F: futures::future::Future>(f: F) -> F::Output {
         .expect("runtime");
 
     let result = rt.block_on(f);
-    rt.shutdown_timeout(std::time::Duration::from_secs(1));
+    rt.shutdown_timeout(Duration::from_secs(1));
     result
 }
 
 async fn start_program(
     h: NodeHandle,
     prog: config::Program,
+    timeout: Option<Duration>,
     mut completed: mpsc::Sender<TokResult<(NodeHandle, Process)>>,
 ) {
-    let msg = do_start_program(prog).await.map(|p| (h, p));
+    let msg = match timeout {
+        Some(t) => {
+            tokio::select! {
+                msg = do_start_program(prog) => {
+                    msg.map(|p| (h, p))
+                },
+                _ = tokio::time::delay_for(t) => {
+                    Err(tokio::io::Error::new(tokio::io::ErrorKind::Other, "timeout"))
+                }
+            }
+        }
+        None => do_start_program(prog).await.map(|p| (h, p)),
+    };
     completed.send(msg).await.expect("channel error");
 }
 
@@ -248,7 +264,7 @@ async fn do_start_program(prog: config::Program) -> TokResult<Process> {
         ReadySignal::Nothing => readysignals::nothing().await?,
         ReadySignal::Manual => readysignals::manual(proc.info.name.as_str()).await?,
         ReadySignal::Timer(s) => {
-            let dur = std::time::Duration::from_secs_f64(s);
+            let dur = Duration::from_secs_f64(s);
             log::debug!("waiting {}s for {}", s, proc);
             readysignals::timer(dur).await?
         }
@@ -275,14 +291,14 @@ async fn do_start_program(prog: config::Program) -> TokResult<Process> {
 async fn stop_program(
     h: NodeHandle,
     proc: Process,
-    timeout: std::time::Duration,
+    timeout: Duration,
     mut completed: mpsc::Sender<NodeHandle>,
 ) {
     do_stop(proc, timeout).await;
     completed.send(h).await.expect("channel error");
 }
 
-async fn do_stop(proc: Process, timeout: std::time::Duration) {
+async fn do_stop(proc: Process, timeout: Duration) {
     let info = proc.info.clone();
     match terminate_wait(proc, timeout).await {
         Ok(status) => {
@@ -326,10 +342,7 @@ async fn wait_for_signal(kind: SignalKind) -> TokResult<()> {
     Ok(())
 }
 
-async fn terminate_wait(
-    proc: Process,
-    timeout: std::time::Duration,
-) -> Result<std::process::ExitStatus> {
+async fn terminate_wait(proc: Process, timeout: Duration) -> Result<std::process::ExitStatus> {
     let pid = proc.info.pid;
     terminate(pid)?;
 
@@ -362,7 +375,7 @@ mod tests {
 
         assert!(proc.is_alive());
 
-        let timeout = std::time::Duration::from_millis(1);
+        let timeout = Duration::from_millis(1);
         do_stop(proc, timeout).await;
 
         assert!(!is_alive(pid));
