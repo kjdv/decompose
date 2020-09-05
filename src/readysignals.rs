@@ -1,56 +1,30 @@
+extern crate futures;
 extern crate nix;
 extern crate regex;
+extern crate tokio;
 
-use std::io;
-use std::io::BufRead;
-use std::ops::Add;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+type Result = std::result::Result<bool, tokio::io::Error>;
 
-pub trait ReadySignal {
-    fn poll(&mut self) -> Result<bool>;
+pub async fn nothing() -> Result {
+    Ok(true)
 }
 
-pub struct Nothing {}
+pub async fn manual(name: &str) -> Result {
+    let mut stdout = tokio::io::stdout();
+    stdout
+        .write(format!("Manually waiting for {}, press enter", name).as_bytes())
+        .await?;
+    stdout.flush().await?;
 
-impl Nothing {
-    pub fn new() -> Nothing {
-        Nothing {}
-    }
+    let mut stdin = tokio::io::stdin();
+    let mut buf = [0; 1];
+    stdin.read(&mut buf).await?;
+    Ok(true)
 }
 
-impl ReadySignal for Nothing {
-    fn poll(&mut self) -> Result<bool> {
-        Ok(true)
-    }
-}
-
-pub struct Manual<'a> {
-    name: String,
-    prompt: Option<Box<dyn FnOnce() -> io::Result<()> + 'a>>,
-}
-
-impl<'a> Manual<'a> {
-    pub fn new(name: String) -> Manual<'a> {
-        let prompt = Box::new(|| {
-            let mut sink = String::new();
-            io::stdin().read_line(&mut sink)?;
-            Ok(())
-        });
-        Manual::new_with_prompt(name, prompt)
-    }
-
-    pub fn new_with_prompt(
-        name: String,
-        prompt: Box<dyn FnOnce() -> io::Result<()> + 'a>,
-    ) -> Manual<'a> {
-        Manual {
-            name,
-            prompt: Some(prompt),
-        }
-    }
-}
-
+/*
 impl ReadySignal for Manual<'_> {
     fn poll(&mut self) -> Result<bool> {
         if let Some(p) = self.prompt.take() {
@@ -187,36 +161,21 @@ impl ReadySignal for Completed {
     }
 }
 
+*/
+
 #[cfg(test)]
 mod tests {
+    extern crate tokio;
+
     use super::*;
-    use std::io::Write;
-    use std::ops::AddAssign;
 
-    fn assert_is_true(rs: &mut dyn ReadySignal) {
-        let status = rs.poll().expect("ok");
-        assert_eq!(true, status);
-
-        // somewhat check invariant: once a signal is ready it remains ready
-        let status = rs.poll().expect("ok");
-        assert_eq!(true, status);
+    #[tokio::test]
+    async fn test_nothing() {
+        let result = nothing().await.expect("nothing");
+        assert!(result);
     }
 
-    fn assert_is_false(rs: &mut dyn ReadySignal) {
-        let status = rs.poll().expect("ok");
-        assert_eq!(false, status);
-    }
-
-    fn assert_is_err(rs: &mut dyn ReadySignal) {
-        rs.poll().expect_err("err");
-    }
-
-    #[test]
-    fn nothing() {
-        let mut rs = Nothing::new();
-        assert_is_true(&mut rs);
-    }
-
+    /*
     #[test]
     fn manual_ok() {
         let prompt = Box::new(|| Ok(()));
@@ -324,4 +283,6 @@ mod tests {
         }
         // success, error returned
     }
+
+    */
 }

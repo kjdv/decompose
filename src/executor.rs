@@ -231,6 +231,9 @@ async fn start_program(
 }
 
 async fn do_start_program(prog: config::Program) -> TokResult<Process> {
+    use config::ReadySignal;
+    use tokio::io::{Error, ErrorKind};
+   
     let child = Command::new(&prog.argv[0])
         .args(&prog.argv.as_slice()[1..])
         .envs(&prog.env)
@@ -243,11 +246,23 @@ async fn do_start_program(prog: config::Program) -> TokResult<Process> {
 
     log::info!("{} started", proc.info);
 
-    tokio::time::delay_for(tokio::time::Duration::from_secs(1)).await;
+    let rs =match prog.ready {
+        ReadySignal::Nothing => readysignals::nothing(),
+        _ => readysignals::nothing(),
+   };
 
-    log::info!("{} ready", proc.info);
-
-    Ok(proc)
+    match rs.await {
+        Ok(true) => {
+            log::info!("{} ready", proc.info);
+            Ok(proc)
+        },
+        Ok(false) => {
+            let msg = format!("{} not ready", proc.info);
+            log::error!("{}", msg);
+            Err(Error::new(ErrorKind::Other, msg))
+        }
+        Err(e) => Err(e),
+    }
 }
 
 async fn stop_program(
@@ -303,7 +318,7 @@ async fn wait_for_signal(kind: SignalKind) -> TokResult<()> {
 }
 
 async fn terminate_wait(
-    mut proc: Process,
+    proc: Process,
     timeout: std::time::Duration,
 ) -> Result<std::process::ExitStatus> {
     let pid = proc.info.pid;

@@ -5,8 +5,6 @@ extern crate simple_logger;
 use std::error::Error;
 
 mod config;
-mod execution;
-mod executionlist;
 mod executor;
 mod graph;
 mod output;
