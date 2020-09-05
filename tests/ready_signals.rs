@@ -30,7 +30,6 @@ mod readysignals {
         assert_eq!("prog", prog.name.as_str());
     }
 
-    /*
     #[test]
     fn port() {
         let mut f = Fixture::new("rs_port.yaml");
@@ -39,6 +38,9 @@ mod readysignals {
         let status = call(9093, "hello");
         assert!(status.is_ok());
     }
+
+    /*
+
 
     #[test]
     fn stdout() {

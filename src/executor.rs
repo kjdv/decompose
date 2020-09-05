@@ -252,6 +252,10 @@ async fn do_start_program(prog: config::Program) -> TokResult<Process> {
             log::debug!("waiting {}s for {}", s, proc);
             readysignals::timer(dur).await?
         }
+        ReadySignal::Port(port) => {
+            log::debug!("waiting for port {} for {}", port, proc);
+            readysignals::port(port).await?
+        }
         _ => readysignals::nothing().await?,
     };
 

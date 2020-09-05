@@ -29,6 +29,24 @@ pub async fn timer(dur: std::time::Duration) -> Result {
     Ok(true)
 }
 
+pub async fn port(port: u16) -> Result {
+    host_and_port("127.0.0.1", port).await
+}
+
+async fn host_and_port(host: &str, port: u16) -> Result {
+    use tokio::net::TcpStream;
+
+    let interval = std::time::Duration::from_millis(1);
+    let address = format!("{}:{}", host, port);
+
+    loop {
+        if TcpStream::connect(&address).await.is_ok() {
+            return Ok(true);
+        }
+        tokio::time::delay_for(interval).await;
+    }
+}
+
 /*
 pub struct Port {
     address: String,
@@ -140,17 +158,16 @@ mod tests {
         assert!(result);
     }
 
-    /*
-    #[test]
-    fn port() {
-        let mut rs = Port::new(9092);
-        assert_is_false(&mut rs);
-
+    #[tokio::test]
+    async fn test_port() {
         // cheating on unit test rules: is opening a port okay?
         let _listener = std::net::TcpListener::bind("127.0.0.1:9092").expect("open 9292");
 
-        assert_is_true(&mut rs);
+        let result = port(9092).await.expect("port");
+        assert!(result);
     }
+
+    /*
 
     #[test]
     fn stdout() {
