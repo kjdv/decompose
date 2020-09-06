@@ -90,7 +90,9 @@ pub struct Fixture {
 impl Fixture {
     pub fn new(config: &str) -> Fixture {
         LOG_INIT.call_once(|| {
-            simple_logger::init_with_level(log::Level::Info).expect("log init");
+            simple_logger::SimpleLogger::new()
+                .with_level(log::LevelFilter::Info)
+                .init().expect("log init");
         });
         BIN_INIT.call_once(link_helpers);
 

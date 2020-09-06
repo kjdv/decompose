@@ -1,4 +1,3 @@
-/*
 mod common;
 
 mod ensemble {
@@ -24,12 +23,14 @@ mod ensemble {
         let body = call(9091, "hello").expect("call");
         assert_eq!("hello!\n".to_string(), body);
 
-        f.stop();
+        //f.stop();
 
-        f.expect_program_terminates(&proxy);
-        f.expect_program_terminates(&srv);
-        f.expect_stop();
+        //f.expect_program_terminates(&proxy);
+        //f.expect_program_terminates(&srv);
+        //f.expect_stop();
     }
+
+    /*
 
     #[test]
     fn sets_args() {
@@ -60,5 +61,6 @@ mod ensemble {
         let body = call(9090, "cwd").expect("call");
         assert!(body.ends_with("target/testrun"));
     }
+
+    */
 }
-*/

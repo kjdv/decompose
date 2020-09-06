@@ -99,14 +99,18 @@ mod tests {
 
     impl StringReader {
         fn new(buf: String) -> StringReader {
-            StringReader{
-                cursor: std::io::Cursor::new(buf)
+            StringReader {
+                cursor: std::io::Cursor::new(buf),
             }
         }
     }
 
     impl AsyncRead for StringReader {
-        fn poll_read(mut self: std::pin::Pin<&mut Self>, _: &mut futures::task::Context, mut buf: &mut [u8]) -> Poll<std::io::Result<usize>> {
+        fn poll_read(
+            mut self: std::pin::Pin<&mut Self>,
+            _: &mut futures::task::Context,
+            mut buf: &mut [u8],
+        ) -> Poll<std::io::Result<usize>> {
             let r = std::io::Read::read(&mut self.cursor, &mut buf);
             Poll::Ready(r)
         }
@@ -116,7 +120,9 @@ mod tests {
     async fn test_output_good() {
         let reader = StringReader::new("aap\nprogram:123 running\nnoot\n".to_string());
 
-        let result = output(reader, "^program:[0-9]+.*$".to_string()).await.expect("re");
+        let result = output(reader, "^program:[0-9]+.*$".to_string())
+            .await
+            .expect("re");
         assert!(result);
     }
 
@@ -124,7 +130,9 @@ mod tests {
     async fn test_output_bad() {
         let reader = StringReader::new("aap\nnoot\nmies".to_string());
 
-        let result = output(reader, "^program:[0-9]+.*$".to_string()).await.expect("re");
+        let result = output(reader, "^program:[0-9]+.*$".to_string())
+            .await
+            .expect("re");
         assert!(!result);
     }
 

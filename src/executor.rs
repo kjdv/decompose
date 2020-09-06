@@ -256,10 +256,14 @@ async fn do_start_program(prog: config::Program) -> TokResult<Process> {
     use config::ReadySignal;
     use tokio::io::{Error, ErrorKind};
 
-    let child = Command::new(&prog.argv[0])
+    let executable = std::fs::canonicalize(&prog.argv[0])?;
+    let current_dir = std::fs::canonicalize(prog.cwd)?;
+    log::debug!("executable {:?}, current dir will be {:?}", executable, current_dir);
+
+    let child = Command::new(executable)
         .args(&prog.argv.as_slice()[1..])
         .envs(&prog.env)
-        .current_dir(prog.cwd)
+        .current_dir(current_dir)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true)

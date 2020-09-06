@@ -49,12 +49,14 @@ fn do_main() -> Result<(), Box<dyn Error>> {
         .get_matches();
 
     let level = if args.is_present("debug") {
-        log::Level::Debug
+        log::LevelFilter::Debug
     } else {
-        log::Level::Info
+        log::LevelFilter::Info
     };
 
-    simple_logger::init_with_level(level)?;
+    simple_logger::SimpleLogger::new()
+        .with_level(level)
+        .init()?;
 
     log::debug!("arguments are config file is {:?}", args);
 
