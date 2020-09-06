@@ -237,18 +237,10 @@ async fn start_program(
     mut completed: mpsc::Sender<TokResult<(NodeHandle, Process)>>,
 ) {
     let msg = match timeout {
-        Some(t) => {
-            tokio::select! {
-                msg = do_start_program(prog) => {
-                    msg.map(|p| (h, p))
-                },
-                _ = tokio::time::delay_for(t) => {
-                    Err(tokio::io::Error::new(tokio::io::ErrorKind::Other, "timeout"))
-                }
-            }
-        }
-        None => do_start_program(prog).await.map(|p| (h, p)),
-    };
+        Some(t) => with_timeout(do_start_program(prog), t).await,
+        None => do_start_program(prog).await,
+    }
+    .map(|p| (h, p));
     completed.send(msg).await.expect("channel error");
 }
 
@@ -377,17 +369,25 @@ async fn terminate_wait(
         let pid = proc.info.pid;
         terminate(pid)?;
 
-        tokio::select! {
-            x = p.wait_with_output() => {
-                match x {
-                    Ok(o) => Ok(Some(o.status)),
-                    Err(e) => Err(e.into()),
-                }
-            },
-            _ = tokio::time::delay_for(timeout) => Err(string_error::static_err("timeout")),
-        }
+        with_timeout(p.wait_with_output(), timeout)
+            .await
+            .map(|ok| Some(ok.status))
+            .map_err(|e| e.into())
     } else {
         Ok(None)
+    }
+}
+
+async fn with_timeout<R>(
+    f: impl futures::future::Future<Output = TokResult<R>>,
+    timeout: Duration,
+) -> TokResult<R> {
+    tokio::select! {
+        x = f => x,
+        _ = tokio::time::delay_for(timeout) => {
+            let err = tokio::io::Error::new(tokio::io::ErrorKind::Other, "timeout");
+            Err(err)
+        }
     }
 }
 
