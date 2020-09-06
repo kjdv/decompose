@@ -92,7 +92,8 @@ impl Fixture {
         LOG_INIT.call_once(|| {
             simple_logger::SimpleLogger::new()
                 .with_level(log::LevelFilter::Info)
-                .init().expect("log init");
+                .init()
+                .expect("log init");
         });
         BIN_INIT.call_once(link_helpers);
 

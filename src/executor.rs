@@ -113,6 +113,8 @@ impl Executor {
         });
 
         while let Some(h) = rx.recv().await {
+            self.running.remove(&h);
+
             let expanded: Vec<_> = self
                 .dependency_graph
                 .expand_back(h, |i| !self.running.contains_key(&i))
@@ -121,8 +123,6 @@ impl Executor {
             expanded.iter().for_each(|h| {
                 self.send_stop(*h, tx.clone());
             });
-
-            self.running.remove(&h);
 
             if self.running.is_empty() {
                 break;
@@ -258,7 +258,11 @@ async fn do_start_program(prog: config::Program) -> TokResult<Process> {
 
     let executable = std::fs::canonicalize(&prog.argv[0])?;
     let current_dir = std::fs::canonicalize(prog.cwd)?;
-    log::debug!("executable {:?}, current dir will be {:?}", executable, current_dir);
+    log::debug!(
+        "executable {:?}, current dir will be {:?}",
+        executable,
+        current_dir
+    );
 
     let child = Command::new(executable)
         .args(&prog.argv.as_slice()[1..])
