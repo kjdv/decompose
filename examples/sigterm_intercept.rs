@@ -1,8 +1,11 @@
-use clap;
-use signal_hook::{iterator::Signals, SIGINT, SIGTERM};
-use std::error::Error;
+extern crate clap;
+extern crate tokio;
 
-fn main() -> Result<(), Box<dyn Error>> {
+use std::error::Error;
+use tokio::signal::unix::{signal, SignalKind};
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error>> {
     let args = clap::App::new("signal interceptor")
         .author("Klaas de Vries")
         .about("intercepts SIGINT and SIGTERM, for aide in automated tests of decompose")
@@ -14,17 +17,31 @@ fn main() -> Result<(), Box<dyn Error>> {
         )
         .get_matches();
 
-    let signals = Signals::new(&[SIGINT, SIGTERM])?;
+    let ret = !args.is_present("diehard");
 
-    println!("listening for SIGINT and SIGTERM");
-    for sig in signals.forever() {
-        println!("Received signal {:?}", sig);
+    let a = print_signal(SignalKind::terminate(), ret, "SIGTERM");
+    let b = print_signal(SignalKind::interrupt(), ret, "SIGINT");
 
-        if !args.is_present("diehard") {
-            println!("doing a clean exit");
-            return Ok(());
-        }
+    tokio::select! {
+        _ = a => (),
+        _ = b => (),
     }
 
+    println!("doing a clean exit");
+
     Ok(())
+}
+
+async fn print_signal(kind: SignalKind, ret: bool, name: &str) {
+    let mut stream = signal(kind).expect("signal");
+    println!("listening for {}", name);
+
+    loop {
+        stream.recv().await;
+        println!("Received signal {}", name);
+
+        if ret {
+            return;
+        }
+    }
 }
