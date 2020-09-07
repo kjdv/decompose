@@ -1,3 +1,104 @@
+extern crate tokio;
+
+use super::config;
+use super::executor::ProcessInfo;
+use log;
+use std::process::Stdio;
+use std::sync::Arc;
+use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::sync::mpsc;
+
+pub struct LogItem {
+    info: Arc<ProcessInfo>,
+    line: String,
+}
+
+type Sender = Option<mpsc::Sender<LogItem>>;
+type Receiver = Option<mpsc::Receiver<LogItem>>;
+
+pub trait OutputFactory {
+    fn stdout(&self, prog: &config::Program) -> (Stdio, Sender);
+    fn stderr(&self, prog: &config::Program) -> (Stdio, Sender) {
+        self.stdout(prog)
+    }
+}
+
+pub async fn consume<W>(rx: Receiver, mut writer: W)
+where
+    W: AsyncWrite + std::marker::Unpin,
+{
+    use tokio::io::AsyncWriteExt;
+
+    if let Some(mut rx) = rx {
+        while let Some(item) = rx.recv().await {
+            if let Err(e) = writer.write(item.line.as_bytes()).await {
+                log::error!("{}", e);
+                return;
+            }
+        }
+    }
+}
+
+pub async fn produce<R>(tx: Sender, reader: Option<R>, info: &ProcessInfo)
+where
+    R: AsyncRead + std::marker::Unpin,
+{
+    use tokio::io::AsyncBufReadExt;
+
+    let h = tx.and_then(|tx| reader.map(|reader| (tx, reader)));
+
+    if let Some((mut tx, reader)) = h {
+        let info = Arc::new(info.clone());
+        let mut reader = tokio::io::BufReader::new(reader).lines();
+
+        while let Ok(item) = reader
+            .next_line()
+            .await
+            .and_then(|line: Option<String>| line.ok_or_else(|| make_err("channel error")))
+            .and_then(|line: String| {
+                let item = LogItem {
+                    info: info.clone(),
+                    line,
+                };
+                Ok(item)
+            })
+            .map_err(|e| {
+                log::error!("{}", e);
+                e
+            })
+        {
+            if let Err(e) = tx.send(item).await {
+                log::error!("{}", e)
+            }
+        }
+    }
+}
+
+fn make_err<E>(e: E) -> tokio::io::Error
+where
+    E: Into<Box<dyn std::error::Error + 'static + Sync + Send>>,
+{
+    use tokio::io::{Error, ErrorKind};
+
+    Error::new(ErrorKind::Other, e)
+}
+
+struct NullOutputFactory();
+
+impl OutputFactory for NullOutputFactory {
+    fn stdout(&self, _: &config::Program) -> (Stdio, Sender) {
+        (Stdio::null(), None)
+    }
+}
+
+struct InheritOutputFactory();
+
+impl OutputFactory for InheritOutputFactory {
+    fn stdout(&self, _: &config::Program) -> (Stdio, Sender) {
+        (Stdio::inherit(), None)
+    }
+}
+
 /*
 
 extern crate chrono;

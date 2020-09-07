@@ -179,7 +179,7 @@ struct Process {
 }
 
 #[derive(Debug, Clone)]
-struct ProcessInfo {
+pub struct ProcessInfo {
     name: String,
     pid: u32,
 }
@@ -246,7 +246,6 @@ async fn start_program(
 
 async fn do_start_program(prog: config::Program) -> TokResult<Process> {
     use config::ReadySignal;
-    use tokio::io::{Error, ErrorKind};
 
     let executable = std::fs::canonicalize(&prog.argv[0])?;
     let current_dir = std::fs::canonicalize(prog.cwd)?;
@@ -299,7 +298,7 @@ async fn do_start_program(prog: config::Program) -> TokResult<Process> {
         false => {
             let msg = format!("{} not ready", info);
             log::error!("{}", msg);
-            Err(Error::new(ErrorKind::Other, msg))
+            Err(make_err(msg))
         }
     }
 }
@@ -385,10 +384,18 @@ async fn with_timeout<R>(
     tokio::select! {
         x = f => x,
         _ = tokio::time::delay_for(timeout) => {
-            let err = tokio::io::Error::new(tokio::io::ErrorKind::Other, "timeout");
-            Err(err)
+            Err(make_err("timeout"))
         }
     }
+}
+
+fn make_err<E>(e: E) -> tokio::io::Error
+where
+    E: Into<Box<dyn std::error::Error + 'static + Sync + Send>>,
+{
+    use tokio::io::{Error, ErrorKind};
+
+    Error::new(ErrorKind::Other, e)
 }
 
 #[cfg(test)]
