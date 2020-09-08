@@ -14,7 +14,6 @@ use tokio::process::Command;
 use tokio::signal::unix::SignalKind;
 use tokio::sync::mpsc;
 
-type TokResult<T> = std::result::Result<T, tokio::io::Error>;
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
 pub struct Executor {
@@ -167,7 +166,7 @@ impl Drop for Executor {
     fn drop(&mut self) {
         // optimize: don't bother constructing a runtime if everything is stopped already
         if !self.running.is_empty() {
-            run(self.stop());
+            tokio_utils::run(self.stop());
         }
     }
 }
@@ -180,8 +179,8 @@ struct Process {
 
 #[derive(Debug, Clone)]
 pub struct ProcessInfo {
-    name: String,
-    pid: u32,
+    pub name: String,
+    pub pid: u32,
 }
 
 impl Process {
@@ -218,33 +217,21 @@ impl std::fmt::Display for ProcessInfo {
     }
 }
 
-pub fn run<F: futures::future::Future>(f: F) -> F::Output {
-    let mut rt = tokio::runtime::Builder::new()
-        .basic_scheduler()
-        .enable_all()
-        .build()
-        .expect("runtime");
-
-    let result = rt.block_on(f);
-    rt.shutdown_timeout(Duration::from_secs(1));
-    result
-}
-
 async fn start_program(
     h: NodeHandle,
     prog: config::Program,
     timeout: Option<Duration>,
-    mut completed: mpsc::Sender<TokResult<(NodeHandle, Process)>>,
+    mut completed: mpsc::Sender<tokio_utils::Result<(NodeHandle, Process)>>,
 ) {
     let msg = match timeout {
-        Some(t) => with_timeout(do_start_program(prog), t).await,
+        Some(t) => tokio_utils::with_timeout(do_start_program(prog), t).await,
         None => do_start_program(prog).await,
     }
     .map(|p| (h, p));
     completed.send(msg).await.expect("channel error");
 }
 
-async fn do_start_program(prog: config::Program) -> TokResult<Process> {
+async fn do_start_program(prog: config::Program) -> tokio_utils::Result<Process> {
     use config::ReadySignal;
 
     let executable = std::fs::canonicalize(&prog.argv[0])?;
@@ -298,7 +285,7 @@ async fn do_start_program(prog: config::Program) -> TokResult<Process> {
         false => {
             let msg = format!("{} not ready", info);
             log::error!("{}", msg);
-            Err(make_err(msg))
+            Err(tokio_utils::make_err(msg))
         }
     }
 }
@@ -351,7 +338,7 @@ fn terminate(pid: u32) -> Result<()> {
     nix_signal::kill(pid, sig).map_err(|e| e.into())
 }
 
-async fn wait_for_signal(kind: SignalKind) -> TokResult<()> {
+async fn wait_for_signal(kind: SignalKind) -> tokio_utils::Result<()> {
     use tokio::signal::unix::signal;
 
     let mut sig = signal(kind)?;
@@ -368,34 +355,13 @@ async fn terminate_wait(
         let pid = proc.info.pid;
         terminate(pid)?;
 
-        with_timeout(p.wait_with_output(), timeout)
+        tokio_utils::with_timeout(p.wait_with_output(), timeout)
             .await
             .map(|ok| Some(ok.status))
             .map_err(|e| e.into())
     } else {
         Ok(None)
     }
-}
-
-async fn with_timeout<R>(
-    f: impl futures::future::Future<Output = TokResult<R>>,
-    timeout: Duration,
-) -> TokResult<R> {
-    tokio::select! {
-        x = f => x,
-        _ = tokio::time::delay_for(timeout) => {
-            Err(make_err("timeout"))
-        }
-    }
-}
-
-fn make_err<E>(e: E) -> tokio::io::Error
-where
-    E: Into<Box<dyn std::error::Error + 'static + Sync + Send>>,
-{
-    use tokio::io::{Error, ErrorKind};
-
-    Error::new(ErrorKind::Other, e)
 }
 
 #[cfg(test)]

@@ -9,6 +9,7 @@ mod executor;
 mod graph;
 mod output;
 mod readysignals;
+mod tokio_utils;
 
 fn main() -> Result<(), Box<dyn Error>> {
     do_main().map_err(|e| {
@@ -75,7 +76,7 @@ fn do_main() -> Result<(), Box<dyn Error>> {
     // exec.wait();
 
     let mut exec = executor::Executor::from_config(&sys)?;
-    executor::run(async move {
+    tokio_utils::run(async move {
         exec.start().await?;
         let res = exec.run().await;
         exec.stop().await;
