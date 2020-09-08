@@ -1,12 +1,14 @@
 extern crate nix;
 extern crate tokio;
 
-use super::*;
+use super::config;
+use super::readysignals;
+use super::tokio_utils;
 
 use log;
 use std::collections::HashMap;
 
-use graph::{Graph, NodeHandle};
+use super::graph::{Graph, NodeHandle};
 use nix::sys::signal as nix_signal;
 use std::process::Stdio;
 use std::time::Duration;
@@ -14,7 +16,7 @@ use tokio::process::Command;
 use tokio::signal::unix::SignalKind;
 use tokio::sync::mpsc;
 
-type Result<T> = std::result::Result<T, Box<dyn Error>>;
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 pub struct Executor {
     dependency_graph: Graph,

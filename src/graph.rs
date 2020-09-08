@@ -1,14 +1,14 @@
 extern crate petgraph;
 extern crate string_error;
 
-use super::*;
+use super::config;
 
 use std::collections::HashMap;
 
 use petgraph::dot::{Config, Dot};
 use petgraph::Direction::{Incoming, Outgoing};
 
-type Result<T> = std::result::Result<T, Box<dyn Error>>;
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 pub struct Graph {
     graph: petgraph::Graph<config::Program, ()>,
