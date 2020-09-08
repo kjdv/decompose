@@ -37,8 +37,34 @@ pub async fn with_timeout<R>(
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::*;
+
+    use futures::task::Poll;
+    use tokio::io::AsyncRead;
+
+    pub struct StringReader {
+        cursor: std::io::Cursor<String>,
+    }
+
+    impl StringReader {
+        pub fn new(buf: String) -> StringReader {
+            StringReader {
+                cursor: std::io::Cursor::new(buf),
+            }
+        }
+    }
+
+    impl AsyncRead for StringReader {
+        fn poll_read(
+            mut self: std::pin::Pin<&mut Self>,
+            _: &mut futures::task::Context,
+            mut buf: &mut [u8],
+        ) -> Poll<std::io::Result<usize>> {
+            let r = std::io::Read::read(&mut self.cursor, &mut buf);
+            Poll::Ready(r)
+        }
+    }
 
     #[test]
     fn test_run() {

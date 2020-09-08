@@ -3,7 +3,6 @@ extern crate tokio;
 
 use super::config;
 use super::executor::ProcessInfo;
-use super::tokio_utils;
 use log;
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -30,12 +29,10 @@ pub async fn consume<W>(rx: Receiver, mut writer: W)
 where
     W: AsyncWrite + std::marker::Unpin,
 {
-    println!("start writing");
     use tokio::io::AsyncWriteExt;
 
     if let Some(mut rx) = rx {
         while let Some(item) = rx.recv().await {
-            println!("got line {}", item.line);
             if let Err(e) = writer.write(item.line.as_bytes()).await {
                 log::error!("{}", e);
                 return;
@@ -54,22 +51,22 @@ where
 
     if let Some((mut tx, reader)) = h {
         let info = Arc::new(info.clone());
-        let mut reader = tokio::io::BufReader::new(reader).lines();
+        let mut reader = tokio::io::BufReader::new(reader);
 
-        while let Some(item) = reader
-            .next_line()
+        let mut buf = String::new();
+        while let Ok(true) = reader
+            .read_line(&mut buf)
             .await
             .map_err(|e| {
                 log::error!("{}", e);
                 e
             })
-            .ok()
-            .and_then(|line: Option<String>| line)
-            .map(|line: String| LogItem {
-                _info: info.clone(),
-                line,
-            })
+            .map(|s| s > 0)
         {
+            let item = LogItem {
+                _info: info.clone(),
+                line: buf.clone(),
+            };
             if let Err(e) = tx.send(item).await {
                 log::error!("{}", e);
                 return;
@@ -129,15 +126,13 @@ impl OutputFactory for OutputFileFactory {
         let name = prog.name.clone();
         let (tx, rx) = mpsc::channel(10);
 
-        println!("spawning");
         tokio::spawn(async move {
-            println!("spawned");
             match open(path, name.as_str()).await {
                 Ok((file, path)) => {
                     log::debug!("opend log file {:?} for {}", path, name);
 
                     consume(Some(rx), file).await;
-                    println!("done writing");
+                    log::debug!("closing log file {:?} for {}", path, name);
                 }
                 Err(e) => {
                     log::error!("{}", e);
@@ -155,14 +150,15 @@ async fn open(
 ) -> tokio::io::Result<(tokio::fs::File, std::path::PathBuf)> {
     path.push(filename);
     let p = path.clone();
-    println!("creating {:?}", path);
     let f = tokio::fs::File::create(path).await?;
     Ok((f, p))
 }
 
 #[cfg(test)]
 mod tests {
+    use super::super::tokio_utils;
     use super::*;
+    use tokio_utils::tests::StringReader;
     extern crate tempfile;
 
     use std::io::Read;
@@ -203,12 +199,7 @@ mod tests {
         assert_eq!(std::process::id(), pid);
     }
 
-    fn produce_data<F: OutputFactory>(lines: Vec<String>, output: F) {
-        let info = Arc::new(ProcessInfo {
-            name: "blah".to_string(),
-            pid: 123,
-        });
-
+    fn produce_data<F: OutputFactory>(data: String, output: F) {
         let cfg = r#"
             [[program]]
             name = "blah"
@@ -219,23 +210,15 @@ mod tests {
         let prog = sys.program[0].clone();
 
         tokio_utils::run(async move {
+            let info = Arc::new(ProcessInfo {
+                name: "blah".to_string(),
+                pid: 123,
+            });
+
+            let reader = StringReader::new(data);
             let (_, tx) = output.stdout(&prog);
 
-            if let Some(mut tx) = tx {
-                for line in lines.iter() {
-                    println!("sending {}", line);
-                    if let Err(e) = tx
-                        .send(LogItem {
-                            _info: info.clone(),
-                            line: line.clone(),
-                        })
-                        .await
-                    {
-                        log::error!("{}", e);
-                        return;
-                    }
-                }
-            }
+            produce(tx, Some(reader), &info).await;
 
             // todo: why is this needed?
             tokio::time::delay_for(std::time::Duration::from_millis(100)).await
@@ -246,31 +229,17 @@ mod tests {
     fn writes_content() {
         let r = root();
         let output = OutputFileFactory::new(&r.path().to_str().unwrap()).unwrap();
-        
-        produce_data(vec!["hello!\n".to_string()], output);
+
+        produce_data("hello!\n".to_string(), output);
 
         let mut p = r.into_path();
         p.push("latest");
         p.push("blah");
 
-        println!("reading {:?}", p);
         let mut f = std::fs::File::open(p).unwrap();
         let mut buf = String::new();
         f.read_to_string(&mut buf).unwrap();
 
         assert_eq!("hello!\n", buf.as_str());
     }
-    /*
-    #[test]
-    fn open_returns_path_() {
-        let r = root();
-        let output = OutputFileFactory::new(&r.path().to_str().unwrap()).unwrap();
-
-        let (_, path) = output.open("test").unwrap();
-
-        let mut expect = output.outdir;
-        expect.push("test");
-
-        assert_eq!(expect, path);
-    }*/
 }

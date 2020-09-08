@@ -75,8 +75,8 @@ pub async fn output<R: AsyncRead + std::marker::Unpin>(reader: R, re: String) ->
 mod tests {
     extern crate tokio;
 
+    use super::super::tokio_utils::tests::StringReader;
     use super::*;
-    use futures::task::Poll;
 
     #[tokio::test]
     async fn test_nothing() {
@@ -91,29 +91,6 @@ mod tests {
 
         let result = port(9092).await.expect("port");
         assert!(result);
-    }
-
-    struct StringReader {
-        cursor: std::io::Cursor<String>,
-    }
-
-    impl StringReader {
-        fn new(buf: String) -> StringReader {
-            StringReader {
-                cursor: std::io::Cursor::new(buf),
-            }
-        }
-    }
-
-    impl AsyncRead for StringReader {
-        fn poll_read(
-            mut self: std::pin::Pin<&mut Self>,
-            _: &mut futures::task::Context,
-            mut buf: &mut [u8],
-        ) -> Poll<std::io::Result<usize>> {
-            let r = std::io::Read::read(&mut self.cursor, &mut buf);
-            Poll::Ready(r)
-        }
     }
 
     #[tokio::test]
