@@ -51,24 +51,25 @@ where
         let info = Arc::new(info.clone());
         let mut reader = tokio::io::BufReader::new(reader).lines();
 
-        while let Ok(item) = reader
+        while let Some(item) = reader
             .next_line()
             .await
-            .and_then(|line: Option<String>| line.ok_or_else(|| make_err("channel error")))
-            .and_then(|line: String| {
-                let item = LogItem {
-                    info: info.clone(),
-                    line,
-                };
-                Ok(item)
-            })
             .map_err(|e| {
                 log::error!("{}", e);
                 e
             })
+            .ok()
+            .and_then(|line: Option<String>| line)
+            .map(|line: String| {
+                LogItem {
+                    info: info.clone(),
+                    line,
+                }
+            })
         {
             if let Err(e) = tx.send(item).await {
-                log::error!("{}", e)
+                log::error!("{}", e);
+                return;
             }
         }
     }
