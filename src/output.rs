@@ -1,12 +1,15 @@
 extern crate tokio;
+extern crate chrono;
 
 use super::config;
 use super::executor::ProcessInfo;
 use log;
 use std::process::Stdio;
 use std::sync::Arc;
+use tokio::io;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::mpsc;
+use std::path::PathBuf;
 
 pub struct LogItem {
     info: Arc<ProcessInfo>,
@@ -100,22 +103,12 @@ impl OutputFactory for InheritOutputFactory {
     }
 }
 
-/*
-
-extern crate chrono;
-use std::fs;
-use std::path::PathBuf;
-
-use super::*;
-
-type Result<T> = std::result::Result<T, Box<dyn Error>>;
-
 pub struct OutputFileFactory {
-    outdir: PathBuf,
+    outdir: PathBuf
 }
 
 impl OutputFileFactory {
-    pub fn new(outdir_root: &str) -> Result<OutputFileFactory> {
+    pub fn new(outdir_root: &str) -> std::result::Result<OutputFileFactory, std::io::Error> {
         let mut outdir_root_buf = PathBuf::new();
         outdir_root_buf.push(outdir_root);
 
@@ -125,27 +118,51 @@ impl OutputFileFactory {
         let mut outdir = outdir_root_buf.clone();
         outdir.push(dirname);
 
-        fs::create_dir_all(&outdir)?;
+        std::fs::create_dir_all(&outdir)?;
 
         let mut latest = outdir_root_buf;
         latest.push("latest");
 
-        if let Err(e) = fs::remove_file(&latest) {
+        if let Err(e) = std::fs::remove_file(&latest) {
             log::debug!("can't remove {:?}: {:?}", latest, e);
         }
         std::os::unix::fs::symlink(&outdir, latest)?;
 
         Ok(OutputFileFactory { outdir })
     }
+}
 
-    pub fn open(&self, filename: &str) -> Result<(fs::File, std::path::PathBuf)> {
-        let mut path = self.outdir.clone();
-        path.push(filename);
-        let p = path.clone();
-        let f = fs::File::create(path)?;
-        Ok((f, p))
+impl OutputFactory for OutputFileFactory {
+    fn stdout(&self, prog: &config::Program) -> (Stdio, Sender) {
+        let path = self.outdir.clone();
+        let name = prog.name.clone();
+        let (tx, rx) = mpsc::channel(10);
+
+        tokio::spawn(async move {
+            match open(path, name.as_str()).await {
+                Ok((file, path)) => {
+                    log::debug!("opend log file {:?} for {}", path, name);
+
+                    consume(Some(rx), file).await;
+                },
+                Err(e) => {
+                    log::error!("{}" ,e);
+                }
+            }
+        });
+
+        (Stdio::piped(), Some(tx))
     }
 }
+
+async fn open(mut path: PathBuf, filename: &str) -> tokio::io::Result<(tokio::fs::File, std::path::PathBuf)> {
+    path.push(filename);
+    let p = path.clone();
+    let f = tokio::fs::File::create(path).await?;
+    Ok((f, p))
+}
+
+/*
 
 #[cfg(test)]
 mod tests {
