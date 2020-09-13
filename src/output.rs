@@ -4,7 +4,7 @@ extern crate tokio;
 use super::config;
 use super::executor::ProcessInfo;
 use log;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -46,7 +46,7 @@ where
     }
 }
 
-pub async fn produce<R>(tx: Sender, reader: Option<R>, info: &ProcessInfo)
+pub async fn produce<R>(tx: Sender, reader: Option<R>, info: ProcessInfo)
 where
     R: AsyncRead + std::marker::Unpin,
 {
@@ -76,6 +76,7 @@ where
                 log::error!("{}", e);
                 return;
             }
+            buf.clear();
         }
     }
 }
@@ -107,25 +108,23 @@ pub struct OutputFileFactory {
 }
 
 impl OutputFileFactory {
-    pub fn new(outdir_root: &str) -> std::result::Result<OutputFileFactory, std::io::Error> {
-        let mut outdir_root_buf = PathBuf::new();
-        outdir_root_buf.push(outdir_root);
+    pub fn new(outdir_root: &Path) -> std::result::Result<OutputFileFactory, std::io::Error> {
+        let outdir_root_buf = outdir_root.to_path_buf();
 
         let now = chrono::Local::now();
         let dirname = format!("{}.{}", now.format("%Y-%m-%dT%H:%M:%S"), std::process::id());
 
         let mut outdir = outdir_root_buf.clone();
-        outdir.push(dirname);
+        outdir.push(dirname.clone());
 
         std::fs::create_dir_all(&outdir)?;
 
-        let mut latest = outdir_root_buf;
-        latest.push("latest");
+        let _guard = ChdirGuard::new(outdir_root_buf.as_path())?;
 
-        if let Err(e) = std::fs::remove_file(&latest) {
-            log::debug!("can't remove {:?}: {:?}", latest, e);
+        if let Err(e) = std::fs::remove_file("latest") {
+            log::debug!("can't remove latest: {:?}", e);
         }
-        std::os::unix::fs::symlink(&outdir, latest)?;
+        std::os::unix::fs::symlink(dirname, "latest")?;
 
         Ok(OutputFileFactory { outdir })
     }
@@ -158,14 +157,29 @@ impl OutputFactory for OutputFileFactory {
     }
 }
 
-async fn open(
-    mut path: PathBuf,
-    filename: &str,
-) -> tokio::io::Result<(tokio::fs::File, std::path::PathBuf)> {
+async fn open(mut path: PathBuf, filename: &str) -> tokio::io::Result<(tokio::fs::File, PathBuf)> {
     path.push(filename);
     let p = path.clone();
     let f = tokio::fs::File::create(path).await?;
     Ok((f, p))
+}
+
+struct ChdirGuard {
+    orig: PathBuf,
+}
+
+impl ChdirGuard {
+    fn new(path: &Path) -> std::io::Result<ChdirGuard> {
+        let orig = std::env::current_dir()?;
+        std::env::set_current_dir(path)?;
+        Ok(ChdirGuard { orig })
+    }
+}
+
+impl Drop for ChdirGuard {
+    fn drop(&mut self) {
+        std::env::set_current_dir(self.orig.as_path()).expect("set current dir");
+    }
 }
 
 #[cfg(test)]
@@ -185,7 +199,7 @@ mod tests {
     #[test]
     fn creates_dirs() {
         let r = root();
-        let _ = OutputFileFactory::new(&r.path().to_str().unwrap());
+        let _ = OutputFileFactory::new(Path::new(r.path().to_str().unwrap()));
 
         let mut latest = r.into_path();
         latest.push("latest");
@@ -193,7 +207,7 @@ mod tests {
 
         let symlink = std::fs::read_link(&latest).unwrap();
         let symlink = symlink.as_path();
-        assert_eq!(latest.parent().unwrap(), symlink.parent().unwrap());
+        assert_eq!("", symlink.parent().unwrap().as_os_str());
 
         let re =
             regex::Regex::new(r#"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.([0-9]+)"#)
@@ -224,15 +238,15 @@ mod tests {
         let prog = sys.program[0].clone();
 
         tokio_utils::run(async move {
-            let info = Arc::new(ProcessInfo {
+            let info = ProcessInfo {
                 name: "blah".to_string(),
                 pid: 123,
-            });
+            };
 
             let reader = StringReader::new(data);
             let output = output.stdout(&prog);
 
-            produce(output.tx, Some(reader), &info).await;
+            produce(output.tx, Some(reader), info).await;
 
             // todo: why is this needed?
             tokio::time::delay_for(std::time::Duration::from_millis(100)).await
@@ -242,7 +256,7 @@ mod tests {
     #[test]
     fn writes_content() {
         let r = root();
-        let output = OutputFileFactory::new(&r.path().to_str().unwrap()).unwrap();
+        let output = OutputFileFactory::new(r.path()).expect("output factory");
 
         produce_data("hello!\n".to_string(), output);
 

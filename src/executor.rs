@@ -261,7 +261,7 @@ async fn do_start_program(
         current_dir
     );
 
-    let child = Command::new(executable)
+    let mut child = Command::new(executable)
         .args(&prog.argv.as_slice()[1..])
         .envs(&prog.env)
         .current_dir(current_dir)
@@ -273,6 +273,12 @@ async fn do_start_program(
         name: prog.name,
         pid: child.id(),
     };
+
+    let stdout_stream = child.stdout.take();
+    tokio::spawn(output::produce(stdout.tx, stdout_stream, info.clone()));
+    //let stderr_stream = child.stderr.take();
+    //tokio::spawn(output::produce(stderr.tx, stderr_stream, info.clone()));
+
     let mut child = Some(child);
 
     log::info!("{} started", info);
@@ -290,10 +296,11 @@ async fn do_start_program(
             readysignals::port(port).await?
         }
         ReadySignal::Completed => readysignals::completed(child.take().unwrap()).await?,
-        ReadySignal::Stdout(re) => {
+        ReadySignal::Stdout(_) => readysignals::nothing().await?,
+        /*ReadySignal::Stdout(re) => {
             let stdout = child.as_mut().unwrap().stdout.as_mut().unwrap();
             readysignals::output(stdout, re).await?
-        }
+        }*/
     };
 
     match rs {

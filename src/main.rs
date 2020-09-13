@@ -96,10 +96,14 @@ files => log files for each process will be places in --outdir",
 }
 
 fn default_outdir() -> String {
+    use std::str::FromStr;
+    String::from_str(".decompose").unwrap()
+
+    /*
     let mut cwd = std::env::current_dir().unwrap();
     cwd.push(".decompose");
     let cwd = cwd.into_os_string();
-    cwd.into_string().unwrap()
+    cwd.into_string().unwrap()*/
 }
 
 fn init_logging(arg: &str) -> Result<(), Box<dyn Error>> {
@@ -127,6 +131,7 @@ fn output_factory(
         "null" => Box::new(output::NullOutputFactory {}),
         "inherit" => Box::new(output::InheritOutputFactory {}),
         "files" => {
+            let od_arg = std::path::Path::new(od_arg);
             let of = output::OutputFileFactory::new(od_arg)?;
             Box::new(of)
         }
