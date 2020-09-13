@@ -24,10 +24,13 @@ fn do_main() -> Result<(), Box<dyn Error>> {
         .author("Klaas de Vries")
         .about("service orchestration for devs")
         .arg(
-            clap::Arg::with_name("debug")
-                .help("enable debug logging")
-                .short("d")
-                .long("debug"),
+            clap::Arg::with_name("loglevel")
+                .help("set the logging level")
+                .short("l")
+                .long("log")
+                .takes_value(true)
+                .possible_values(&["off", "error", "warning", "info", "debug", "trace"])
+                .default_value("info"),
         )
         .arg(
             clap::Arg::with_name("config")
@@ -49,10 +52,14 @@ fn do_main() -> Result<(), Box<dyn Error>> {
         )
         .get_matches();
 
-    let level = if args.is_present("debug") {
-        log::LevelFilter::Debug
-    } else {
-        log::LevelFilter::Info
+    let level = match args.value_of("loglevel").expect("log level") {
+        "off" => log::LevelFilter::Off,
+        "error" => log::LevelFilter::Error,
+        "warning" => log::LevelFilter::Warn,
+        "info" => log::LevelFilter::Info,
+        "debug" => log::LevelFilter::Debug,
+        "trace" => log::LevelFilter::Trace,
+        _ => panic!("invalid log level"),
     };
 
     simple_logger::SimpleLogger::new()
