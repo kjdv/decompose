@@ -191,7 +191,7 @@ struct Process {
 }
 
 #[derive(Debug, Clone)]
-pub struct ProcessInfo {
+struct ProcessInfo {
     pub name: String,
     pub pid: u32,
 }
@@ -275,9 +275,9 @@ async fn do_start_program(
     };
 
     let stdout_stream = child.stdout.take();
-    tokio::spawn(output::produce(stdout.tx, stdout_stream, info.clone()));
+    tokio::spawn(output::produce(stdout.tx, stdout_stream));
     let stderr_stream = child.stderr.take();
-    tokio::spawn(output::produce(stderr.tx, stderr_stream, info.clone()));
+    tokio::spawn(output::produce(stderr.tx, stderr_stream));
 
     let mut child = Some(child);
 

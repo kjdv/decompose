@@ -2,16 +2,13 @@ extern crate chrono;
 extern crate tokio;
 
 use super::config;
-use super::executor::ProcessInfo;
 use log;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::mpsc;
 
 pub struct LogItem {
-    _info: Arc<ProcessInfo>,
     line: String,
 }
 
@@ -46,7 +43,7 @@ where
     }
 }
 
-pub async fn produce<R>(tx: Sender, reader: Option<R>, info: ProcessInfo)
+pub async fn produce<R>(tx: Sender, reader: Option<R>)
 where
     R: AsyncRead + std::marker::Unpin,
 {
@@ -55,7 +52,6 @@ where
     let h = tx.and_then(|tx| reader.map(|reader| (tx, reader)));
 
     if let Some((mut tx, reader)) = h {
-        let info = Arc::new(info.clone());
         let mut reader = tokio::io::BufReader::new(reader);
 
         let mut buf = String::new();
@@ -68,10 +64,7 @@ where
             })
             .map(|s| s > 0)
         {
-            let item = LogItem {
-                _info: info.clone(),
-                line: buf.clone(),
-            };
+            let item = LogItem { line: buf.clone() };
             if let Err(e) = tx.send(item).await {
                 log::error!("{}", e);
                 return;
@@ -245,15 +238,10 @@ mod tests {
         let prog = sys.program[0].clone();
 
         tokio_utils::run(async move {
-            let info = ProcessInfo {
-                name: "blah".to_string(),
-                pid: 123,
-            };
-
             let reader = StringReader::new(data);
             let output = output.stdout(&prog);
 
-            produce(output.tx, Some(reader), info).await;
+            produce(output.tx, Some(reader)).await;
 
             // todo: why is this needed?
             tokio::time::delay_for(std::time::Duration::from_millis(100)).await
