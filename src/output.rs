@@ -128,12 +128,9 @@ impl OutputFileFactory {
 
         Ok(OutputFileFactory { outdir })
     }
-}
 
-impl OutputFactory for OutputFileFactory {
-    fn stdout(&self, prog: &config::Program) -> Output {
+    fn stream(&self, name: String) -> Output {
         let path = self.outdir.clone();
-        let name = prog.name.clone();
         let (tx, rx) = mpsc::channel(10);
 
         tokio::spawn(async move {
@@ -154,6 +151,16 @@ impl OutputFactory for OutputFileFactory {
             cfg: Stdio::piped(),
             tx: Some(tx),
         }
+    }
+}
+
+impl OutputFactory for OutputFileFactory {
+    fn stdout(&self, prog: &config::Program) -> Output {
+        self.stream(format!("{}.out", prog.name))
+    }
+
+    fn stderr(&self, prog: &config::Program) -> Output {
+        self.stream(format!("{}.err", prog.name))
     }
 }
 
@@ -262,7 +269,7 @@ mod tests {
 
         let mut p = r.into_path();
         p.push("latest");
-        p.push("blah");
+        p.push("blah.out");
 
         let mut f = std::fs::File::open(p).unwrap();
         let mut buf = String::new();
