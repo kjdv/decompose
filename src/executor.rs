@@ -274,10 +274,8 @@ async fn do_start_program(
         pid: child.id(),
     };
 
-    let stdout_stream = child.stdout.take();
-    tokio::spawn(output::produce(stdout.tx, stdout_stream));
-    let stderr_stream = child.stderr.take();
-    tokio::spawn(output::produce(stderr.tx, stderr_stream));
+    tokio::spawn(output::produce(stdout.tx, child.stdout.take()));
+    tokio::spawn(output::produce(stderr.tx, child.stderr.take()));
 
     let mut child = Some(child);
 
