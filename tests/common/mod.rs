@@ -101,6 +101,7 @@ impl Fixture {
             .run()
             .expect("cargo run")
             .command()
+            .arg("--output=null")
             .arg("--log=debug")
             .arg(data_file(config))
             .stdin(Stdio::piped())

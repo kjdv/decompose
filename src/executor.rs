@@ -2,6 +2,7 @@ extern crate nix;
 extern crate tokio;
 
 use super::config;
+use super::output;
 use super::readysignals;
 use super::tokio_utils;
 
@@ -10,7 +11,6 @@ use std::collections::HashMap;
 
 use super::graph::{Graph, NodeHandle};
 use nix::sys::signal as nix_signal;
-use std::process::Stdio;
 use std::time::Duration;
 use tokio::process::Command;
 use tokio::signal::unix::SignalKind;
@@ -37,7 +37,7 @@ impl Executor {
         })
     }
 
-    pub async fn start(&mut self) -> Result<()> {
+    pub async fn start(&mut self, output_factory: Box<dyn output::OutputFactory>) -> Result<()> {
         log::info!("starting execution");
 
         let (tx, mut rx) = mpsc::channel(100);
@@ -47,7 +47,9 @@ impl Executor {
             let tx = tx.clone();
 
             log::info!("starting program {}", p.name);
-            tokio::spawn(start_program(h, p, self.start_timeout, tx));
+
+            let (stdout, stderr) = (output_factory.stdout(&p), output_factory.stderr(&p));
+            tokio::spawn(start_program(h, p, stdout, stderr, self.start_timeout, tx));
         });
 
         while let Some(msg) = rx.recv().await {
@@ -62,7 +64,16 @@ impl Executor {
                             let tx = tx.clone();
 
                             log::info!("starting program {}", p.name);
-                            tokio::spawn(start_program(n, p, self.start_timeout, tx));
+                            let (stdout, stderr) =
+                                (output_factory.stdout(&p), output_factory.stderr(&p));
+                            tokio::spawn(start_program(
+                                n,
+                                p,
+                                stdout,
+                                stderr,
+                                self.start_timeout,
+                                tx,
+                            ));
                         });
                 }
                 Err(e) => {
@@ -222,18 +233,24 @@ impl std::fmt::Display for ProcessInfo {
 async fn start_program(
     h: NodeHandle,
     prog: config::Program,
+    stdout: output::Output,
+    stderr: output::Output,
     timeout: Option<Duration>,
     mut completed: mpsc::Sender<tokio_utils::Result<(NodeHandle, Process)>>,
 ) {
     let msg = match timeout {
-        Some(t) => tokio_utils::with_timeout(do_start_program(prog), t).await,
-        None => do_start_program(prog).await,
+        Some(t) => tokio_utils::with_timeout(do_start_program(prog, stdout, stderr), t).await,
+        None => do_start_program(prog, stdout, stderr).await,
     }
     .map(|p| (h, p));
     completed.send(msg).await.expect("channel error");
 }
 
-async fn do_start_program(prog: config::Program) -> tokio_utils::Result<Process> {
+async fn do_start_program(
+    prog: config::Program,
+    stdout: output::Output,
+    stderr: output::Output,
+) -> tokio_utils::Result<Process> {
     use config::ReadySignal;
 
     let executable = std::fs::canonicalize(&prog.argv[0])?;
@@ -248,8 +265,8 @@ async fn do_start_program(prog: config::Program) -> tokio_utils::Result<Process>
         .args(&prog.argv.as_slice()[1..])
         .envs(&prog.env)
         .current_dir(current_dir)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stdout(stdout.cfg)
+        .stderr(stderr.cfg)
         .kill_on_drop(true)
         .spawn()?;
     let info = ProcessInfo {

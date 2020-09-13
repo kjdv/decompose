@@ -18,9 +18,14 @@ pub struct LogItem {
 type Sender = Option<mpsc::Sender<LogItem>>;
 type Receiver = Option<mpsc::Receiver<LogItem>>;
 
+pub struct Output {
+    pub cfg: Stdio,
+    pub tx: Sender,
+}
+
 pub trait OutputFactory {
-    fn stdout(&self, prog: &config::Program) -> (Stdio, Sender);
-    fn stderr(&self, prog: &config::Program) -> (Stdio, Sender) {
+    fn stdout(&self, prog: &config::Program) -> Output;
+    fn stderr(&self, prog: &config::Program) -> Output {
         self.stdout(prog)
     }
 }
@@ -75,19 +80,25 @@ where
     }
 }
 
-struct NullOutputFactory();
+pub struct NullOutputFactory();
 
 impl OutputFactory for NullOutputFactory {
-    fn stdout(&self, _: &config::Program) -> (Stdio, Sender) {
-        (Stdio::null(), None)
+    fn stdout(&self, _: &config::Program) -> Output {
+        Output {
+            cfg: Stdio::null(),
+            tx: None,
+        }
     }
 }
 
-struct InheritOutputFactory();
+pub struct InheritOutputFactory();
 
 impl OutputFactory for InheritOutputFactory {
-    fn stdout(&self, _: &config::Program) -> (Stdio, Sender) {
-        (Stdio::inherit(), None)
+    fn stdout(&self, _: &config::Program) -> Output {
+        Output {
+            cfg: Stdio::inherit(),
+            tx: None,
+        }
     }
 }
 
@@ -121,7 +132,7 @@ impl OutputFileFactory {
 }
 
 impl OutputFactory for OutputFileFactory {
-    fn stdout(&self, prog: &config::Program) -> (Stdio, Sender) {
+    fn stdout(&self, prog: &config::Program) -> Output {
         let path = self.outdir.clone();
         let name = prog.name.clone();
         let (tx, rx) = mpsc::channel(10);
@@ -140,7 +151,10 @@ impl OutputFactory for OutputFileFactory {
             }
         });
 
-        (Stdio::piped(), Some(tx))
+        Output {
+            cfg: Stdio::piped(),
+            tx: Some(tx),
+        }
     }
 }
 
@@ -216,9 +230,9 @@ mod tests {
             });
 
             let reader = StringReader::new(data);
-            let (_, tx) = output.stdout(&prog);
+            let output = output.stdout(&prog);
 
-            produce(tx, Some(reader), &info).await;
+            produce(output.tx, Some(reader), &info).await;
 
             // todo: why is this needed?
             tokio::time::delay_for(std::time::Duration::from_millis(100)).await
