@@ -9,10 +9,10 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::mpsc;
 
 pub struct LogItem {
-    line: String,
+    pub line: String,
 }
 
-type Sender = Option<mpsc::Sender<LogItem>>;
+pub type Sender = Option<mpsc::Sender<LogItem>>;
 type Receiver = Option<mpsc::Receiver<LogItem>>;
 
 pub struct Output {

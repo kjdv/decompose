@@ -253,26 +253,12 @@ async fn do_start_program(
 ) -> tokio_utils::Result<Process> {
     use config::ReadySignal;
 
-    let executable = std::fs::canonicalize(&prog.argv[0])?;
-    let current_dir = std::fs::canonicalize(prog.cwd)?;
-    log::debug!(
-        "executable {:?}, current dir will be {:?}",
-        executable,
-        current_dir
-    );
+    // too much special cases here
+    if let ReadySignal::Stdout(re) = prog.ready.clone() {
+        return do_start_program_monitoring(prog, stdout, stderr, re).await;
+    }
 
-    let mut child = Command::new(executable)
-        .args(&prog.argv.as_slice()[1..])
-        .envs(&prog.env)
-        .current_dir(current_dir)
-        .stdout(stdout.cfg)
-        .stderr(stderr.cfg)
-        .kill_on_drop(true)
-        .spawn()?;
-    let info = ProcessInfo {
-        name: prog.name,
-        pid: child.id(),
-    };
+    let (mut child, info) = create_child_process(&prog, stdout.cfg, stderr.cfg)?;
 
     tokio::spawn(output::produce(stdout.tx, child.stdout.take()));
     tokio::spawn(output::produce(stderr.tx, child.stderr.take()));
@@ -294,11 +280,7 @@ async fn do_start_program(
             readysignals::port(port).await?
         }
         ReadySignal::Completed => readysignals::completed(child.take().unwrap()).await?,
-        ReadySignal::Stdout(_) => readysignals::nothing().await?,
-        /*ReadySignal::Stdout(re) => {
-            let stdout = child.as_mut().unwrap().stdout.as_mut().unwrap();
-            readysignals::output(stdout, re).await?
-        }*/
+        ReadySignal::Stdout(_) => panic!("not expexting stdout signal here"),
     };
 
     match rs {
@@ -312,6 +294,73 @@ async fn do_start_program(
             Err(tokio_utils::make_err(msg))
         }
     }
+}
+
+async fn do_start_program_monitoring(
+    prog: config::Program,
+    stdout: output::Output,
+    stderr: output::Output,
+    monitor_re: String,
+) -> tokio_utils::Result<Process> {
+    use std::os::unix::io::{AsRawFd, FromRawFd};
+    use std::process::Stdio;
+
+    let (mut child, info) = create_child_process(&prog, Stdio::piped(), stderr.cfg)?;
+
+    println!("AAAA");
+    let fd = child.stdout.as_ref().unwrap().as_raw_fd();
+    let fd = nix::unistd::dup(fd).map_err(|e| tokio_utils::make_err(e))?;
+    println!("fd={}", fd);
+    let pipe = unsafe { std::fs::File::from_raw_fd(fd) };
+    //let pipe = tokio::fs::File::from_std(pipe);
+    println!("BBBB");
+    tokio::spawn(output::produce(stdout.tx, child.stdout.take()));
+    tokio::spawn(output::produce(stderr.tx, child.stderr.take()));
+
+    log::info!("{} started", info);
+
+    let rs = readysignals::output(pipe, monitor_re).await?;
+
+    match rs {
+        true => {
+            log::info!("{} ready", info);
+            Ok(Process::new(Some(child), info))
+        }
+        false => {
+            let msg = format!("{} not ready", info);
+            log::error!("{}", msg);
+            Err(tokio_utils::make_err(msg))
+        }
+    }
+}
+
+fn create_child_process(
+    prog: &config::Program,
+    stdout: std::process::Stdio,
+    stderr: std::process::Stdio,
+) -> tokio_utils::Result<(tokio::process::Child, ProcessInfo)> {
+    let executable = std::fs::canonicalize(&prog.argv[0])?;
+    let current_dir = std::fs::canonicalize(prog.cwd.clone())?;
+    log::debug!(
+        "executable {:?}, current dir will be {:?}",
+        executable,
+        current_dir
+    );
+
+    let child = Command::new(executable)
+        .args(&prog.argv.as_slice()[1..])
+        .envs(&prog.env)
+        .current_dir(current_dir)
+        .stdout(stdout)
+        .stderr(stderr)
+        .kill_on_drop(true)
+        .spawn()?;
+    let info = ProcessInfo {
+        name: prog.name.clone(),
+        pid: child.id(),
+    };
+
+    Ok((child, info))
 }
 
 async fn stop_program(
