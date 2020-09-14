@@ -1,8 +1,8 @@
 extern crate clap;
 extern crate string_error;
 
-use std::net::{TcpListener, TcpStream};
 use std::io::{Read, Write};
+use std::net::{TcpListener, TcpStream};
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -57,9 +57,7 @@ fn handle(mut stream: TcpStream) -> Result<()> {
     } else if request.starts_with("args") {
         let idx = request.split_ascii_whitespace().nth(1).ok_or("bad index")?;
         let idx: usize = idx.parse()?;
-        let arg = std::env::args()
-            .nth(idx)
-            .ok_or("bad arg index")?;
+        let arg = std::env::args().nth(idx).ok_or("bad arg index")?;
 
         stream.write_all(arg.as_bytes())?;
     } else if request.starts_with("cwd") {

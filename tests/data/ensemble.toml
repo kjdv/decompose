@@ -1,6 +1,6 @@
 [[program]]
 name = "server"
-argv = ["./bin/server", "extra", "arg", "--address", "127.0.0.1:9090"]
+argv = ["./target/testrun/bin/server", "extra", "arg", "--address", "127.0.0.1:9090"]
 env = { FOO = "BAR" }
 cwd = "./target/testrun"
 ready = { port = 9090 }

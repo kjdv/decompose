@@ -1,12 +1,12 @@
 extern crate escargot;
 
 use nix::sys::signal::{kill, SIGTERM};
+use std::convert::TryInto;
 use std::io::{BufRead, Read, Write};
 use std::path::PathBuf;
+use std::process::{Child, Stdio};
 use std::str::FromStr;
 use std::sync::Once;
-use std::process::{Child, Stdio};
-use std::convert::TryInto;
 
 static LOG_INIT: Once = Once::new();
 static BIN_INIT: Once = Once::new();
@@ -62,7 +62,7 @@ fn link_helpers() {
 }
 
 fn terminate(proc: &mut Child, timeout: f64) -> bool {
-    use std::time::{Instant, Duration};
+    use std::time::{Duration, Instant};
 
     let end = Instant::now() + Duration::from_secs_f64(timeout);
 
@@ -83,14 +83,17 @@ fn terminate(proc: &mut Child, timeout: f64) -> bool {
 pub struct Fixture {
     process: Option<Child>,
     reader: std::io::BufReader<std::process::ChildStdout>,
-    writer: std::io::BufWriter<std::process::ChildStdin>
+    writer: std::io::BufWriter<std::process::ChildStdin>,
 }
 
 #[allow(dead_code)]
 impl Fixture {
     pub fn new(config: &str) -> Fixture {
         LOG_INIT.call_once(|| {
-            simple_logger::init_with_level(log::Level::Info).expect("log init");
+            simple_logger::SimpleLogger::new()
+                .with_level(log::LevelFilter::Info)
+                .init()
+                .expect("log init");
         });
         BIN_INIT.call_once(link_helpers);
 
@@ -98,7 +101,8 @@ impl Fixture {
             .run()
             .expect("cargo run")
             .command()
-            .arg("--debug")
+            .arg("--output=null")
+            .arg("--log=debug")
             .arg(data_file(config))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -111,7 +115,7 @@ impl Fixture {
         Fixture {
             process: Some(proc),
             reader,
-            writer
+            writer,
         }
     }
 
@@ -153,16 +157,16 @@ impl Fixture {
     }
 
     pub fn expect_start(&mut self) {
-        self.expect_line(r"\[decompose::execution\] starting execution");
+        self.expect_line(r"\[decompose::executor\] starting execution");
     }
 
     pub fn expect_stop(&mut self) {
-        self.expect_line(r"\[decompose::execution\] stopping execution");
+        self.expect_line(r"\[decompose::executor\] stopping execution");
     }
 
     pub fn expect_program_starts(&mut self) -> ProgramInfo {
         let caps =
-            self.expect_line(r"\[decompose::execution\] ([a-zA-Z][a-zA-Z0-9]+):([0-9]+) started");
+            self.expect_line(r"\[decompose::executor\] ([a-zA-Z][a-zA-Z0-9]+):([0-9]+) started");
         ProgramInfo {
             name: caps.get(1).unwrap().to_string(),
             pid: caps.get(2).unwrap().to_string().parse().unwrap(),
@@ -171,7 +175,7 @@ impl Fixture {
 
     pub fn expect_program_ready(&mut self) -> ProgramInfo {
         let caps =
-            self.expect_line(r"\[decompose::execution\] ([a-zA-Z][a-zA-Z0-9]+):([0-9]+) ready");
+            self.expect_line(r"\[decompose::executor\] ([a-zA-Z][a-zA-Z0-9]+):([0-9]+) ready");
         ProgramInfo {
             name: caps.get(1).unwrap().to_string(),
             pid: caps.get(2).unwrap().to_string().parse().unwrap(),
@@ -179,17 +183,17 @@ impl Fixture {
     }
 
     pub fn expect_program_dies(&mut self, prog: &ProgramInfo) {
-        let re = format!("\\[decompose::execution\\] {} died", *prog);
+        let re = format!("\\[decompose::executor\\] {} stopped", *prog);
         self.expect_line(re.as_str());
     }
 
     pub fn expect_program_terminates(&mut self, prog: &ProgramInfo) {
-        let re = format!("\\[decompose::execution\\] {} terminated", *prog);
+        let re = format!("\\[decompose::executor\\] {} terminated", *prog);
         self.expect_line(re.as_str());
     }
 
     pub fn expect_program_is_killed(&mut self, prog: &ProgramInfo) {
-        let re = format!("\\[decompose::execution\\] {} killed", *prog);
+        let re = format!("\\[decompose::executor\\] {} killed", *prog);
         self.expect_line(re.as_str());
     }
 
@@ -203,7 +207,7 @@ impl Fixture {
     }
 
     pub fn expect_exited(&mut self) {
-        use std::time::{Instant, Duration};
+        use std::time::{Duration, Instant};
 
         if self.process.is_none() {
             return;
@@ -211,7 +215,14 @@ impl Fixture {
 
         let end = Instant::now() + Duration::from_secs(1);
 
-        while self.process.as_mut().unwrap().try_wait().expect("wait").is_none() {
+        while self
+            .process
+            .as_mut()
+            .unwrap()
+            .try_wait()
+            .expect("wait")
+            .is_none()
+        {
             assert!(Instant::now() <= end);
         }
     }
