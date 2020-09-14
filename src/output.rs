@@ -28,7 +28,7 @@ where
     use tokio::io::AsyncWriteExt;
 
     while let Ok(line) = rx.recv().await.map_err(|e| {
-        log::error!("{}", e);
+        log::debug!("{}", e);
         e
     }) {
         if let Err(e) = writer.write(line.as_bytes()).await {
@@ -71,7 +71,7 @@ impl OutputFactory for NullOutputFactory {
     fn stdout(&self, _: &config::Program) -> Sender {
         let (tx, rx) = make_channel();
 
-        tokio::spawn(async move { consume(rx, tokio::io::sink()) });
+        tokio::spawn(consume(rx, tokio::io::sink()));
         tx
     }
 }
@@ -82,14 +82,14 @@ impl OutputFactory for InheritOutputFactory {
     fn stdout(&self, _: &config::Program) -> Sender {
         let (tx, rx) = make_channel();
 
-        tokio::spawn(async move { consume(rx, tokio::io::stdout()) });
+        tokio::spawn(consume(rx, tokio::io::stdout()));
         tx
     }
 
     fn stderr(&self, _: &config::Program) -> Sender {
         let (tx, rx) = make_channel();
 
-        tokio::spawn(async move { consume(rx, tokio::io::stderr()) });
+        tokio::spawn(consume(rx, tokio::io::stderr()));
         tx
     }
 }

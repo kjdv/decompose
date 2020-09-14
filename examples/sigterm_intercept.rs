@@ -58,10 +58,10 @@ async fn print_signal(kind: SignalKind, ret: bool, name: &str, to_stderr: bool) 
 }
 
 struct Printer {
-    to_stderr: bool
+    to_stderr: bool,
 }
 
-impl Printer{
+impl Printer {
     fn print(&self, line: String) {
         if self.to_stderr {
             eprintln!("{}", line);
