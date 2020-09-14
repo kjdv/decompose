@@ -49,6 +49,7 @@ pub enum ReadySignal {
     Timer(f64),
     Port(u16),
     Stdout(String),
+    Stderr(String),
     Completed,
 }
 
@@ -285,6 +286,11 @@ mod tests {
             ready = {stdout="^ready$"}
 
             [[program]]
+            name = "stderr"
+            argv = ["foo"]
+            ready = {stderr="^ready$"}
+
+            [[program]]
             name = "completed"
             argv = ["foo"]
             ready = {completed={}}
@@ -301,7 +307,11 @@ mod tests {
             ReadySignal::Stdout("^ready$".to_string()),
             res.program[5].ready
         );
-        assert_eq!(ReadySignal::Completed, res.program[6].ready);
+        assert_eq!(
+            ReadySignal::Stderr("^ready$".to_string()),
+            res.program[6].ready
+        );
+        assert_eq!(ReadySignal::Completed, res.program[7].ready);
     }
 
     #[test]

@@ -4,7 +4,10 @@ extern crate nix;
 extern crate regex;
 extern crate tokio;
 
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+use super::output::Receiver;
+use super::tokio_utils::make_err;
 
 type Result = std::result::Result<bool, tokio::io::Error>;
 
@@ -54,24 +57,30 @@ pub async fn completed(proc: tokio::process::Child) -> Result {
         .map(|output| output.status.success())
 }
 
-pub async fn output<R: std::io::Read>(reader: R, re: String) -> std::io::Result<bool> {
-    use std::io;
-    use std::io::BufRead;
+pub async fn output(mut rx: Receiver, re: String) -> Result {
+    let re = regex::Regex::new(re.as_str()).map_err(|e| make_err(e))?;
 
-    let re = regex::Regex::new(re.as_str())
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{}", e)))?;
+    loop {
+        match rx.recv().await {
+            Err(tokio::sync::broadcast::RecvError::Closed) => return Ok(false),
+            Err(e) => return Err(make_err(e)),
+            Ok(line) => {
+                let rn: &[_] = &['\r', '\n'];
+                let line = line.trim_end_matches(rn);
 
-    let r = io::BufReader::new(reader).lines()
-        .filter_map(|line| line.ok())
-        .any(|line| {re.is_match(line.as_str())});
-    Ok(r)
+                if re.is_match(line) {
+                    println!("match");
+                    return Ok(true);
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     extern crate tokio;
 
-    use super::super::tokio_utils::tests::StringReader;
     use super::*;
 
     #[tokio::test]
@@ -89,12 +98,16 @@ mod tests {
         assert!(result);
     }
 
-    /*
     #[tokio::test]
     async fn test_output_good() {
-        let reader = StringReader::new("aap\nprogram:123 running\nnoot\n".to_string());
+        let (tx, rx) = tokio::sync::broadcast::channel(10);
 
-        let result = output(reader, "^program:[0-9]+.*$".to_string())
+        for line in &["aap\n", "program:123 running\n", "noot\n"] {
+            tx.send(line.to_string()).unwrap();
+        }
+        drop(tx);
+
+        let result = output(rx, "^program:[0-9]+.*$".to_string())
             .await
             .expect("re");
         assert!(result);
@@ -102,14 +115,18 @@ mod tests {
 
     #[tokio::test]
     async fn test_output_bad() {
-        let reader = StringReader::new("aap\nnoot\nmies".to_string());
+        let (tx, rx) = tokio::sync::broadcast::channel(10);
 
-        let result = output(reader, "^program:[0-9]+.*$".to_string())
+        for line in &["aap\n", "noot\n", "mies\n"] {
+            tx.send(line.to_string()).unwrap();
+        }
+        drop(tx);
+
+        let result = output(rx, "^program:[0-9]+.*$".to_string())
             .await
             .expect("re");
         assert!(!result);
     }
-    */
 
     #[tokio::test]
     async fn test_completed() {

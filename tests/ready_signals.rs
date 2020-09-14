@@ -46,6 +46,12 @@ mod readysignals {
     }
 
     #[test]
+    fn stderr() {
+        let mut f = Fixture::new("rs_stderr.yaml");
+        f.expect_program_ready();
+    }
+
+    #[test]
     fn completed() {
         let mut f = Fixture::new("rs_completed.yaml");
 

@@ -4,41 +4,36 @@ extern crate tokio;
 use super::config;
 use log;
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
 use tokio::io::{AsyncRead, AsyncWrite};
-use tokio::sync::mpsc;
+use tokio::sync::broadcast;
 
-pub struct LogItem {
-    pub line: String,
-}
-
-pub type Sender = Option<mpsc::Sender<LogItem>>;
-type Receiver = Option<mpsc::Receiver<LogItem>>;
-
-pub struct Output {
-    pub cfg: Stdio,
-    pub tx: Sender,
-}
+pub type Sender = broadcast::Sender<String>;
+pub type Receiver = broadcast::Receiver<String>;
 
 pub trait OutputFactory {
-    fn stdout(&self, prog: &config::Program) -> Output;
-    fn stderr(&self, prog: &config::Program) -> Output {
+    fn stdout(&self, prog: &config::Program) -> Sender;
+    fn stderr(&self, prog: &config::Program) -> Sender {
         self.stdout(prog)
     }
 }
 
-pub async fn consume<W>(rx: Receiver, mut writer: W)
+fn make_channel() -> (Sender, Receiver) {
+    broadcast::channel(16)
+}
+
+pub async fn consume<W>(mut rx: Receiver, mut writer: W)
 where
     W: AsyncWrite + std::marker::Unpin,
 {
     use tokio::io::AsyncWriteExt;
 
-    if let Some(mut rx) = rx {
-        while let Some(item) = rx.recv().await {
-            if let Err(e) = writer.write(item.line.as_bytes()).await {
-                log::error!("{}", e);
-                return;
-            }
+    while let Ok(line) = rx.recv().await.map_err(|e| {
+        log::error!("{}", e);
+        e
+    }) {
+        if let Err(e) = writer.write(line.as_bytes()).await {
+            log::error!("{}", e);
+            return;
         }
     }
 }
@@ -49,9 +44,7 @@ where
 {
     use tokio::io::AsyncBufReadExt;
 
-    let h = tx.and_then(|tx| reader.map(|reader| (tx, reader)));
-
-    if let Some((mut tx, reader)) = h {
+    if let Some(reader) = reader {
         let mut reader = tokio::io::BufReader::new(reader);
 
         let mut buf = String::new();
@@ -64,10 +57,8 @@ where
             })
             .map(|s| s > 0)
         {
-            let item = LogItem { line: buf.clone() };
-            if let Err(e) = tx.send(item).await {
-                log::error!("{}", e);
-                return;
+            if let Err(e) = tx.send(buf.clone()) {
+                log::debug!("{:?}", e);
             }
             buf.clear();
         }
@@ -77,22 +68,29 @@ where
 pub struct NullOutputFactory();
 
 impl OutputFactory for NullOutputFactory {
-    fn stdout(&self, _: &config::Program) -> Output {
-        Output {
-            cfg: Stdio::null(),
-            tx: None,
-        }
+    fn stdout(&self, _: &config::Program) -> Sender {
+        let (tx, rx) = make_channel();
+
+        tokio::spawn(async move { consume(rx, tokio::io::sink()) });
+        tx
     }
 }
 
 pub struct InheritOutputFactory();
 
 impl OutputFactory for InheritOutputFactory {
-    fn stdout(&self, _: &config::Program) -> Output {
-        Output {
-            cfg: Stdio::inherit(),
-            tx: None,
-        }
+    fn stdout(&self, _: &config::Program) -> Sender {
+        let (tx, rx) = make_channel();
+
+        tokio::spawn(async move { consume(rx, tokio::io::stdout()) });
+        tx
+    }
+
+    fn stderr(&self, _: &config::Program) -> Sender {
+        let (tx, rx) = make_channel();
+
+        tokio::spawn(async move { consume(rx, tokio::io::stderr()) });
+        tx
     }
 }
 
@@ -122,16 +120,16 @@ impl OutputFileFactory {
         Ok(OutputFileFactory { outdir })
     }
 
-    fn stream(&self, name: String) -> Output {
+    fn stream(&self, name: String) -> Sender {
         let path = self.outdir.clone();
-        let (tx, rx) = mpsc::channel(10);
+        let (tx, rx) = make_channel();
 
         tokio::spawn(async move {
             match open(path, name.as_str()).await {
                 Ok((file, path)) => {
                     log::debug!("opend log file {:?} for {}", path, name);
 
-                    consume(Some(rx), file).await;
+                    consume(rx, file).await;
                     log::debug!("closing log file {:?} for {}", path, name);
                 }
                 Err(e) => {
@@ -139,20 +137,16 @@ impl OutputFileFactory {
                 }
             }
         });
-
-        Output {
-            cfg: Stdio::piped(),
-            tx: Some(tx),
-        }
+        tx
     }
 }
 
 impl OutputFactory for OutputFileFactory {
-    fn stdout(&self, prog: &config::Program) -> Output {
+    fn stdout(&self, prog: &config::Program) -> Sender {
         self.stream(format!("{}.out", prog.name))
     }
 
-    fn stderr(&self, prog: &config::Program) -> Output {
+    fn stderr(&self, prog: &config::Program) -> Sender {
         self.stream(format!("{}.err", prog.name))
     }
 }
@@ -241,7 +235,7 @@ mod tests {
             let reader = StringReader::new(data);
             let output = output.stdout(&prog);
 
-            produce(output.tx, Some(reader)).await;
+            produce(output, Some(reader)).await;
 
             // todo: why is this needed?
             tokio::time::delay_for(std::time::Duration::from_millis(100)).await
@@ -264,5 +258,28 @@ mod tests {
         f.read_to_string(&mut buf).unwrap();
 
         assert_eq!("hello!\n", buf.as_str());
+    }
+
+    #[tokio::test]
+    async fn test_produce() {
+        let reader = StringReader::new("aap\nnoot\nmies\n".to_string());
+        let (tx, mut rx) = make_channel();
+
+        tokio::spawn(produce(tx, Some(reader)));
+
+        assert_eq!("aap\n", rx.recv().await.unwrap());
+        assert_eq!("noot\n", rx.recv().await.unwrap());
+        assert_eq!("mies\n", rx.recv().await.unwrap());
+        assert!(rx.recv().await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_produce_does_nothing_on_empty_reader() {
+        let reader: Option<StringReader> = None;
+        let (tx, mut rx) = make_channel();
+
+        tokio::spawn(produce(tx, reader));
+
+        assert!(rx.recv().await.is_err());
     }
 }

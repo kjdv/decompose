@@ -28,14 +28,14 @@ fn do_main() -> Result<(), Box<dyn Error>> {
                 .long_help(
                     "specify what to do with child processes output:
 null => the output will be ignored
-inherit => inherit output streams from decompose, the output will be merged with decompose's output
+inline => output streams from the child processes will be inlined with decompose's output
 files => log files for each process will be places in --outdir",
                 )
                 .short("o")
                 .long("output")
                 .takes_value(true)
-                .possible_values(&["null", "inherit", "files"])
-                .default_value("inherit"),
+                .possible_values(&["null", "inline", "files"])
+                .default_value("inline"),
         )
         .arg(
             clap::Arg::with_name("outdir")
@@ -129,7 +129,7 @@ fn output_factory(
 ) -> Result<Box<dyn output::OutputFactory>, Box<dyn Error>> {
     let of: Box<dyn output::OutputFactory> = match arg {
         "null" => Box::new(output::NullOutputFactory {}),
-        "inherit" => Box::new(output::InheritOutputFactory {}),
+        "inline" => Box::new(output::InheritOutputFactory {}),
         "files" => {
             let od_arg = std::path::Path::new(od_arg);
             let of = output::OutputFileFactory::new(od_arg)?;
