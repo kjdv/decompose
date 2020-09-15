@@ -21,9 +21,10 @@ fn make_channel() -> (Sender, Receiver) {
     broadcast::channel(16)
 }
 
-pub async fn consume<W>(mut rx: Receiver, mut writer: W)
+pub async fn consume<W, F>(mut rx: Receiver, mut writer: W, formatter: F)
 where
     W: AsyncWrite + std::marker::Unpin,
+    F: Fn(String) -> String,
 {
     use tokio::io::AsyncWriteExt;
 
@@ -31,6 +32,7 @@ where
         log::debug!("{}", e);
         e
     }) {
+        let line = formatter(line);
         if let Err(e) = writer.write(line.as_bytes()).await {
             log::error!("{}", e);
             return;
@@ -45,22 +47,21 @@ where
     use tokio::io::AsyncBufReadExt;
 
     if let Some(reader) = reader {
-        let mut reader = tokio::io::BufReader::new(reader);
+        let mut reader = tokio::io::BufReader::new(reader).lines();
 
-        let mut buf = String::new();
-        while let Ok(true) = reader
-            .read_line(&mut buf)
+        while let Some(line) = reader
+            .next_line()
             .await
             .map_err(|e| {
                 log::error!("{}", e);
                 e
             })
-            .map(|s| s > 0)
+            .ok()
+            .flatten()
         {
-            if let Err(e) = tx.send(buf.clone()) {
+            if let Err(e) = tx.send(line) {
                 log::debug!("{:?}", e);
             }
-            buf.clear();
         }
     }
 }
@@ -71,25 +72,34 @@ impl OutputFactory for NullOutputFactory {
     fn stdout(&self, _: &config::Program) -> Sender {
         let (tx, rx) = make_channel();
 
-        tokio::spawn(consume(rx, tokio::io::sink()));
+        tokio::spawn(consume(rx, tokio::io::sink(), |s| s));
         tx
     }
 }
 
 pub struct InheritOutputFactory();
 
-impl OutputFactory for InheritOutputFactory {
-    fn stdout(&self, _: &config::Program) -> Sender {
-        let (tx, rx) = make_channel();
+impl InheritOutputFactory {
+    fn formatter(&self, prog: &config::Program) -> impl Fn(String) -> String {
+        let tag = prog.name.clone();
+        move |s| format!("[{}] => {}\n", tag.clone(), s)
+    }
+}
 
-        tokio::spawn(consume(rx, tokio::io::stdout()));
+impl OutputFactory for InheritOutputFactory {
+    fn stdout(&self, prog: &config::Program) -> Sender {
+        let (tx, rx) = make_channel();
+        let fmt = self.formatter(prog);
+
+        tokio::spawn(consume(rx, tokio::io::stdout(), fmt));
         tx
     }
 
-    fn stderr(&self, _: &config::Program) -> Sender {
+    fn stderr(&self, prog: &config::Program) -> Sender {
         let (tx, rx) = make_channel();
+        let fmt = self.formatter(prog);
 
-        tokio::spawn(consume(rx, tokio::io::stderr()));
+        tokio::spawn(consume(rx, tokio::io::stderr(), fmt));
         tx
     }
 }
@@ -129,7 +139,7 @@ impl OutputFileFactory {
                 Ok((file, path)) => {
                     log::debug!("opend log file {:?} for {}", path, name);
 
-                    consume(rx, file).await;
+                    consume(rx, file, |s| format!("{}\n", s)).await;
                     log::debug!("closing log file {:?} for {}", path, name);
                 }
                 Err(e) => {
@@ -221,15 +231,22 @@ mod tests {
         assert_eq!(std::process::id(), pid);
     }
 
-    fn produce_data<F: OutputFactory>(data: String, output: F) {
-        let cfg = r#"
+    fn make_prog(name: &str) -> config::Program {
+        let cfg = format!(
+            "
             [[program]]
-            name = "blah"
-            argv = ["blah"]
-            "#;
+            name = \"{}\"
+            argv = [\"blah\"]
+            ",
+            name
+        );
 
-        let sys = config::System::from_toml(cfg).expect("sys");
-        let prog = sys.program[0].clone();
+        let sys = config::System::from_toml(cfg.as_str()).expect("sys");
+        sys.program[0].clone()
+    }
+
+    fn produce_data<F: OutputFactory>(data: String, output: F) {
+        let prog = make_prog("blah");
 
         tokio_utils::run(async move {
             let reader = StringReader::new(data);
@@ -267,9 +284,9 @@ mod tests {
 
         tokio::spawn(produce(tx, Some(reader)));
 
-        assert_eq!("aap\n", rx.recv().await.unwrap());
-        assert_eq!("noot\n", rx.recv().await.unwrap());
-        assert_eq!("mies\n", rx.recv().await.unwrap());
+        assert_eq!("aap", rx.recv().await.unwrap());
+        assert_eq!("noot", rx.recv().await.unwrap());
+        assert_eq!("mies", rx.recv().await.unwrap());
         assert!(rx.recv().await.is_err());
     }
 
