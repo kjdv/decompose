@@ -277,8 +277,9 @@ async fn do_start_program(
             readysignals::port(port).await?
         }
         ReadySignal::Completed => readysignals::completed(child.take().unwrap()).await?,
-        ReadySignal::Stdout(re) => readysignals::output(monitor_out, re).await?,
-        ReadySignal::Stderr(re) => readysignals::output(monitor_err, re).await?,
+        ReadySignal::Stdout(re) => readysignals::output(monitor_out, re.as_str()).await?,
+        ReadySignal::Stderr(re) => readysignals::output(monitor_err, re.as_str()).await?,
+        ReadySignal::Healthcheck(endpoint) => readysignals::healthcheck(endpoint.as_str()).await?,
     };
 
     match rs {

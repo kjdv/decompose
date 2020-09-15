@@ -25,6 +25,9 @@ fn main() {
     println!("listening at {}", address);
     rouille::start_server(address, move |request| {
         router!(request,
+            (GET) (/health) => {
+                try_respond(|_| Ok("healthy\n".to_string()), request)
+            },
             (GET) (/hello) => {
                 try_respond(|_| Ok("hello!\n".to_string()), request)
             },

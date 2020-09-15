@@ -51,6 +51,7 @@ pub enum ReadySignal {
     Stdout(String),
     Stderr(String),
     Completed,
+    Healthcheck(String),
 }
 
 fn default_cwd() -> String {

@@ -2,6 +2,7 @@ extern crate futures;
 extern crate log;
 extern crate nix;
 extern crate regex;
+extern crate reqwest;
 extern crate tokio;
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -57,8 +58,8 @@ pub async fn completed(proc: tokio::process::Child) -> Result {
         .map(|output| output.status.success())
 }
 
-pub async fn output(mut rx: Receiver, re: String) -> Result {
-    let re = regex::Regex::new(re.as_str()).map_err(make_err)?;
+pub async fn output(mut rx: Receiver, re: &str) -> Result {
+    let re = regex::Regex::new(re).map_err(make_err)?;
 
     loop {
         match rx.recv().await {
@@ -74,6 +75,19 @@ pub async fn output(mut rx: Receiver, re: String) -> Result {
                 }
             }
         }
+    }
+}
+
+pub async fn healthcheck(endpoint: &str) -> Result {
+    let interval = std::time::Duration::from_millis(1);
+    loop {
+        let response = reqwest::get(endpoint).await;
+        if let Ok(r) = response {
+            if r.status().is_success() {
+                return Ok(true);
+            }
+        }
+        tokio::time::delay_for(interval).await;
     }
 }
 
@@ -107,9 +121,7 @@ mod tests {
         }
         drop(tx);
 
-        let result = output(rx, "^program:[0-9]+.*$".to_string())
-            .await
-            .expect("re");
+        let result = output(rx, "^program:[0-9]+.*$").await.expect("re");
         assert!(result);
     }
 
@@ -122,9 +134,7 @@ mod tests {
         }
         drop(tx);
 
-        let result = output(rx, "^program:[0-9]+.*$".to_string())
-            .await
-            .expect("re");
+        let result = output(rx, "^program:[0-9]+.*$").await.expect("re");
         assert!(!result);
     }
 

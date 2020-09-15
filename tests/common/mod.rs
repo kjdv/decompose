@@ -250,6 +250,11 @@ impl std::fmt::Display for ProgramInfo {
 #[allow(dead_code)]
 pub fn call(port: u16, path: &str) -> Result<String> {
     let url = format!("http://127.0.0.1:{}/{}", port, path);
-    let body = reqwest::blocking::get(url.as_str())?.text()?;
-    Ok(body)
+    let response = reqwest::blocking::get(url.as_str())?;
+    let good = response.status().is_success();
+    let body = response.text()?;
+    match good {
+        true => Ok(body),
+        false => Err(string_error::into_err(body))
+    }
 }
