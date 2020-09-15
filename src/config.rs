@@ -51,7 +51,15 @@ pub enum ReadySignal {
     Stdout(String),
     Stderr(String),
     Completed,
-    Healthcheck(String),
+    Healthcheck(Endpoint),
+}
+
+#[derive(Deserialize, Debug, PartialEq, Clone)]
+pub struct Endpoint {
+    pub port: u16,
+    pub path: String,
+    #[serde(default = "localhost")]
+    pub host: String,
 }
 
 fn default_cwd() -> String {
@@ -78,6 +86,10 @@ fn default_ready_signal() -> ReadySignal {
 
 fn default_depends() -> Vec<String> {
     Vec::new()
+}
+
+fn localhost() -> String {
+    "127.0.0.1".to_string()
 }
 
 impl System {
@@ -295,6 +307,11 @@ mod tests {
             name = "completed"
             argv = ["foo"]
             ready = {completed={}}
+
+            [[program]]
+            name = "endpoint"
+            argv = ["foo"]
+            ready = {healthcheck={port=123, path="/health", host="localhost"}}
             "#;
 
         let res = System::from_toml(toml).unwrap();
@@ -313,6 +330,15 @@ mod tests {
             res.program[6].ready
         );
         assert_eq!(ReadySignal::Completed, res.program[7].ready);
+
+        assert_eq!(
+            ReadySignal::Healthcheck(Endpoint {
+                port: 123,
+                path: "/health".to_string(),
+                host: "localhost".to_string()
+            }),
+            res.program[8].ready
+        );
     }
 
     #[test]

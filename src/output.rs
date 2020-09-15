@@ -78,13 +78,13 @@ impl OutputFactory for NullOutputFactory {
     }
 }
 
-pub struct InheritOutputFactory {
+pub struct InlineOutputFactory {
     color_cycle: std::iter::Cycle<std::slice::Iter<'static, Color>>,
 }
 
-impl InheritOutputFactory {
-    pub fn new() -> InheritOutputFactory {
-        InheritOutputFactory {
+impl InlineOutputFactory {
+    pub fn new() -> InlineOutputFactory {
+        InlineOutputFactory {
             // restrict to neutral colors for stdout, red is for stderr
             color_cycle: [
                 Color::Green,
@@ -106,7 +106,7 @@ impl InheritOutputFactory {
     }
 }
 
-impl OutputFactory for InheritOutputFactory {
+impl OutputFactory for InlineOutputFactory {
     fn stdout(&mut self, prog: &config::Program) -> Sender {
         let (tx, rx) = make_channel();
         let color = *self.color_cycle.next().unwrap();

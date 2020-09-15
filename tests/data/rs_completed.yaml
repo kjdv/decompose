@@ -9,6 +9,8 @@ program:
       - ./target/testrun/bin/server
       - --address=127.0.0.1:9093
     ready:
-      healthcheck: http://127.0.0.1:9093/health
+      healthcheck: 
+        port: 9093
+        path: health
     depends:
       - dep
