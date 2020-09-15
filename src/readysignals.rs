@@ -58,7 +58,7 @@ pub async fn completed(proc: tokio::process::Child) -> Result {
 }
 
 pub async fn output(mut rx: Receiver, re: String) -> Result {
-    let re = regex::Regex::new(re.as_str()).map_err(|e| make_err(e))?;
+    let re = regex::Regex::new(re.as_str()).map_err(make_err)?;
 
     loop {
         match rx.recv().await {

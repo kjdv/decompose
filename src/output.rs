@@ -2,7 +2,6 @@ extern crate chrono;
 extern crate tokio;
 
 use super::config;
-use log;
 use std::path::{Path, PathBuf};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::broadcast;

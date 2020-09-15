@@ -101,7 +101,7 @@ impl Graph {
     }
 
     fn validate(graph: &petgraph::Graph<config::Program, ()>) -> Result<()> {
-        if !graph.externals(Incoming).next().is_some() {
+        if graph.externals(Incoming).next().is_none() {
             return Err(string_error::static_err(
                 "system graph has no dependency-free root nodes",
             ));

@@ -6,7 +6,6 @@ use super::output;
 use super::readysignals;
 use super::tokio_utils;
 
-use log;
 use std::collections::HashMap;
 
 use super::graph::{Graph, NodeHandle};
@@ -200,7 +199,7 @@ impl Process {
     fn new(proc: Option<tokio::process::Child>, info: ProcessInfo) -> Process {
         Process {
             proc: proc.map(Box::new),
-            info: info,
+            info,
         }
     }
 
@@ -209,7 +208,7 @@ impl Process {
         let pid = proc.id();
         Process {
             proc: Some(Box::new(proc)),
-            info: ProcessInfo { name: name, pid },
+            info: ProcessInfo { name, pid },
         }
     }
 
