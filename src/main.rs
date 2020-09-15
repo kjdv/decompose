@@ -51,7 +51,7 @@ files => log files for each process will be places in --outdir",
                 .long("log")
                 .takes_value(true)
                 .possible_values(&["off", "error", "warning", "info", "debug", "trace"])
-                .default_value("info"),
+                .default_value("warning"),
         )
         .arg(
             clap::Arg::with_name("config")
@@ -77,7 +77,7 @@ files => log files for each process will be places in --outdir",
         return Ok(());
     }
 
-    log::info!("system is {:?}", sys);
+    log::debug!("system is {:?}", sys);
 
     let of = output_factory(
         args.value_of("output").expect("output"),
