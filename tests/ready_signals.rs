@@ -61,7 +61,7 @@ mod readysignals {
         let prog = f.expect_program_ready();
         assert_eq!("prog", prog.name.as_str());
 
-        let status = call(9093, "hello\n");
+        let status = call(9093, "hello");
         assert!(status.is_ok());
     }
 }

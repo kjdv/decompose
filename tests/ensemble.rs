@@ -35,7 +35,7 @@ mod ensemble {
         let mut f = Fixture::new("ensemble.toml");
         assert_ready(&mut f);
 
-        let body = call(9090, "args 1").expect("call");
+        let body = call(9090, "args?idx=1").expect("call");
         assert_eq!("extra".to_string(), body);
 
         f.stop();
@@ -47,7 +47,7 @@ mod ensemble {
         let mut f = Fixture::new("ensemble.toml");
         assert_ready(&mut f);
 
-        let body = call(9090, "env FOO").expect("call");
+        let body = call(9090, "env?key=FOO").expect("call");
         assert_eq!("BAR".to_string(), body);
     }
 

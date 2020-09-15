@@ -1,10 +1,7 @@
 extern crate clap;
 extern crate string_error;
-
-use std::io::{Read, Write};
-use std::net::{TcpListener, TcpStream};
-
-type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+#[macro_use]
+extern crate rouille;
 
 fn main() {
     let args = clap::App::new("server")
@@ -25,56 +22,61 @@ fn main() {
         .get_matches();
 
     let address = args.value_of("address").unwrap();
-    serve(address);
-}
-
-fn serve(address: &str) {
     println!("listening at {}", address);
-
-    let listener = TcpListener::bind(address).expect("bind");
-
-    for stream in listener.incoming() {
-        match handle(stream.expect("stream")) {
-            Ok(_) => println!("done"),
-            Err(e) => println!("Error: {}", e),
-        };
-    }
+    rouille::start_server(address, move |request| {
+        router!(request,
+            (GET) (/hello) => {
+                try_respond(|_| Ok("hello!\n".to_string()), request)
+            },
+            (GET) (/args) => {
+                try_respond(|r| {
+                    let idx = match r.get_param("idx") {
+                        None => return Err(string_error::static_err("no index")),
+                        Some(idx) => idx
+                    };
+                    let idx: usize = idx.parse()?;
+                    let arg = std::env::args().nth(idx).ok_or("bad arg index")?;
+                    Ok(arg.to_string())
+                }, request)
+            },
+            (GET) (/cwd) => {
+                try_respond(|_| {
+                    let cwd = std::env::current_dir()?;
+                    let cwd = cwd.into_os_string();
+                    let cwd = cwd.into_string().unwrap();
+                    Ok(cwd)
+                }, request)
+            },
+            (GET) (/env) => {
+                try_respond(|r| {
+                    let key = match r.get_param("key") {
+                        None => return Err(string_error::static_err("no key")),
+                        Some(idx) => idx
+                    };
+                    let value = std::env::var(key)?;
+                    Ok(value)
+                }, request)
+            },
+            _ => {
+                println!("404 not found");
+                rouille::Response::empty_404()
+            }
+        )
+    });
 }
 
-fn handle(mut stream: TcpStream) -> Result<()> {
-    let mut buf = [0; 512];
-
-    let size = stream.read(&mut buf)?;
-    let request = String::from_utf8_lossy(&buf[0..size]);
-
-    println!("request='{}', size={}", request, size);
-
-    if request.starts_with("hello") {
-        let hello = "hello!\n";
-
-        print!("{}", hello);
-        stream.write_all(hello.as_bytes())?;
-    } else if request.starts_with("args") {
-        let idx = request.split_ascii_whitespace().nth(1).ok_or("bad index")?;
-        let idx: usize = idx.parse()?;
-        let arg = std::env::args().nth(idx).ok_or("bad arg index")?;
-
-        stream.write_all(arg.as_bytes())?;
-    } else if request.starts_with("cwd") {
-        let cwd = std::env::current_dir()?;
-        let cwd = cwd.into_os_string();
-        let cwd = cwd.into_string().unwrap();
-
-        stream.write_all(cwd.as_bytes())?;
-    } else if request.starts_with("env") {
-        let key = request.split_ascii_whitespace().nth(1).ok_or("bad index")?;
-        let value = std::env::var(key)?;
-
-        stream.write_all(value.as_bytes())?;
-    } else {
-        return Err(string_error::new_err("404"));
+fn try_respond<F>(f: F, r: &rouille::Request) -> rouille::Response
+where
+    F: Fn(&rouille::Request) -> std::result::Result<String, Box<dyn std::error::Error>>,
+{
+    match f(r) {
+        Ok(text) => {
+            print!("{}", text);
+            rouille::Response::text(text)
+        }
+        Err(e) => {
+            println!("Error: {}", e);
+            rouille::Response::empty_400()
+        }
     }
-
-    stream.flush()?;
-    Ok(())
 }

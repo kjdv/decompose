@@ -1,8 +1,9 @@
 extern crate escargot;
+extern crate reqwest;
 
 use nix::sys::signal::{kill, SIGTERM};
 use std::convert::TryInto;
-use std::io::{BufRead, Read, Write};
+use std::io::{BufRead, Write};
 use std::path::PathBuf;
 use std::process::{Child, Stdio};
 use std::str::FromStr;
@@ -248,15 +249,7 @@ impl std::fmt::Display for ProgramInfo {
 
 #[allow(dead_code)]
 pub fn call(port: u16, path: &str) -> Result<String> {
-    let address = format!("127.0.0.1:{}", port);
-    let mut stream = std::net::TcpStream::connect(address.as_str())?;
-
-    stream.write_all(path.as_bytes())?;
-    stream.flush()?;
-
-    let mut buf = [0; 512];
-    let size = stream.read(&mut buf)?;
-
-    let response = String::from_utf8_lossy(&buf[0..size]);
-    Ok(response.to_string())
+    let url = format!("http://127.0.0.1:{}/{}", port, path);
+    let body = reqwest::blocking::get(url.as_str())?.text()?;
+    Ok(body)
 }

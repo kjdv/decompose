@@ -24,3 +24,5 @@ chrono = "^0.4.15"
 [dev-dependencies]
 tempfile = "^3.1.0"
 escargot = "^0.5.0"
+rouille = "^3.0.0"
+reqwest = { version = "^0.10.8", features = ["blocking"] }
