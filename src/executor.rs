@@ -301,7 +301,11 @@ async fn do_start_program(
 fn create_child_process(
     prog: &config::Program,
 ) -> tokio_utils::Result<(tokio::process::Child, ProcessInfo)> {
-    let executable = std::fs::canonicalize(&prog.argv[0])?;
+    use std::str::FromStr;
+
+    let executable = std::fs::canonicalize(&prog.argv[0])
+        .or_else(|_| std::path::PathBuf::from_str(&prog.argv[0]))
+        .map_err(tokio_utils::make_err)?;
     let current_dir = std::fs::canonicalize(prog.cwd.clone())?;
     log::debug!(
         "executable {:?}, current dir will be {:?}",
