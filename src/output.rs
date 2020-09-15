@@ -257,7 +257,7 @@ mod tests {
             "
             [[program]]
             name = \"{}\"
-            argv = [\"blah\"]
+            exec = \"blah\"
             ",
             name
         );

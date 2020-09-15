@@ -2,7 +2,6 @@ start_timeout: 3
 
 program:
   - name: prog
-    argv:
-      - ./target/testrun/bin/sigterm_intercept
+    exec: ./target/testrun/bin/sigterm_intercept
     ready:
       manual:

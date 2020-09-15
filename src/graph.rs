@@ -130,7 +130,7 @@ mod tests {
         let cfg = r#"
         [[program]]
         name = "single"
-        argv = ["blah"]
+        exec = "blah"
         "#;
 
         let graph = make(cfg);
@@ -149,11 +149,11 @@ mod tests {
         let cfg = r#"
         [[program]]
         name = "server"
-        argv = ["server"]
+        exec = "server"
 
         [[program]]
         name = "proxy"
-        argv = ["proxy"]
+        exec = "proxy"
         depends = ["server"]
         "#;
 
@@ -184,16 +184,16 @@ mod tests {
         let toml = r#"
         [[program]]
         name = "a"
-        argv = ["a"]
+        exec = "a"
 
         [[program]]
         name = "b"
-        argv = ["b"]
+        exec = "b"
         depends = ["c"]
 
         [[program]]
         name = "c"
-        argv = ["c"]
+        exec = "c"
         depends = ["b"]
         "#;
 
@@ -211,25 +211,25 @@ mod tests {
         let cfg = r#"
         [[program]]
         name = "a"
-        argv = ["a"]
+        exec = "a"
 
         [[program]]
         name = "b"
-        argv = ["b"]
+        exec = "b"
 
         [[program]]
         name = "c"
-        argv = ["c"]
+        exec = "c"
         depends = ["a", "b"]
 
         [[program]]
         name = "d"
-        argv = ["d"]
+        exec = "d"
         depends = ["c"]
 
         [[program]]
         name = "e"
-        argv = ["e"]
+        exec = "e"
         depends = ["c"]
         "#;
 
@@ -265,20 +265,20 @@ mod tests {
         let cfg = r#"
         [[program]]
         name = "a"
-        argv = ["a"]
+        exec = "a"
 
         [[program]]
         name = "b"
-        argv = ["b"]
+        exec = "b"
 
         [[program]]
         name = "c"
-        argv = ["c"]
+        exec = "c"
         depends = ["a", "b"]
 
         [[program]]
         name = "d"
-        argv = ["d"]
+        exec = "d"
         depends = ["c"]
         "#;
 

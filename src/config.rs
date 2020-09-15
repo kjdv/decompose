@@ -23,7 +23,10 @@ pub struct System {
 #[derive(Deserialize, Debug, Clone)]
 pub struct Program {
     pub name: String,
-    pub argv: Vec<String>,
+    pub exec: String,
+
+    #[serde(default)]
+    pub args: Vec<String>,
 
     #[serde(default)]
     pub env: HashMap<String, String>,
@@ -114,10 +117,6 @@ impl System {
         let mut found_starting_point = false;
         let mut names = HashSet::new();
         for prog in &sys.program {
-            if prog.argv.is_empty() {
-                let msg = format!("need at least one argv argument for {:?}", prog.name);
-                return Err(msg.into());
-            }
             if prog.depends.is_empty() {
                 found_starting_point = true;
             }
@@ -149,14 +148,15 @@ mod tests {
 
             [[program]]
             name = "prog1"
-            argv = ["abc", "def"]
+            exec = "abc"
+            args = ["def"]
             env = {ghi = "jkl", mno = "pqr"}
             cwd = "/tmp"
             enabled = true
 
             [[program]]
             name = "prog2"
-            argv = ["exec"]
+            exec = "exec"
             env = {}
             cwd = "."
             enabled = false
@@ -170,7 +170,8 @@ mod tests {
         let prog1 = &system.program[0];
 
         assert_eq!("prog1", prog1.name);
-        assert_eq!(vec!["abc", "def"], prog1.argv);
+        assert_eq!("abc", prog1.exec);
+        assert_eq!(vec!["def"], prog1.args);
         assert_eq!("jkl", prog1.env.get("ghi").unwrap());
         assert_eq!("pqr", prog1.env.get("mno").unwrap());
         assert_eq!("/tmp", prog1.cwd);
@@ -179,7 +180,8 @@ mod tests {
         let prog2 = &system.program[1];
 
         assert_eq!("prog2", prog2.name);
-        assert_eq!(vec!["exec"], prog2.argv);
+        assert_eq!("exec", prog2.exec);
+        assert!(prog2.args.is_empty());
         assert_eq!(0, prog2.env.len());
         assert_eq!(".", prog2.cwd);
         assert_eq!(false, prog2.enabled);
@@ -190,7 +192,7 @@ mod tests {
         let toml = r#"
             [[program]]
             name = "prog"
-            argv = ["abc"]
+            exec = "abc"
         "#;
 
         let system = System::from_toml(toml).unwrap();
@@ -210,7 +212,7 @@ mod tests {
     fn test_fail_if_mandatory_are_absent() {
         let toml = r#"
             [[program]]
-            argv = ["abc"]
+            exec = "abc"
         "#;
 
         let res = System::from_toml(toml);
@@ -230,7 +232,7 @@ mod tests {
         let toml = r#"
             [[program]]
             name = "prog"
-            argv = []
+            args = []
         "#;
 
         let res = System::from_toml(toml);
@@ -242,7 +244,7 @@ mod tests {
         let toml = r#"
             [[program]]
             name = "prog"
-            argv = ["foo"]
+            exec = "foo"
             depends = ["prog"]
         "#;
 
@@ -255,11 +257,11 @@ mod tests {
         let toml = r#"
             [[program]]
             name = "prog"
-            argv = ["foo"]
+            exec = "foo"
 
             [[program]]
             name = "prog"
-            argv = ["foo"]
+            exec = "foo"
         "#;
 
         let res = System::from_toml(toml);
@@ -271,46 +273,46 @@ mod tests {
         let toml = r#"
             [[program]]
             name = "default"
-            argv = ["foo"]
+            exec = "foo"
 
             [[program]]
             name = "port"
-            argv = ["foo"]
+            exec = "foo"
             ready = {port = 123}
 
             [[program]]
             name = "nothing"
-            argv = ["foo"]
+            exec = "foo"
             ready = {nothing={}}
 
             [[program]]
             name = "manual"
-            argv = ["foo"]
+            exec = "foo"
             ready = {manual={}}
 
             [[program]]
             name = "timer"
-            argv = ["foo"]
+            exec = "foo"
             ready = {timer=0.5}
 
             [[program]]
             name = "stdout"
-            argv = ["foo"]
+            exec = "foo"
             ready = {stdout="^ready$"}
 
             [[program]]
             name = "stderr"
-            argv = ["foo"]
+            exec = "foo"
             ready = {stderr="^ready$"}
 
             [[program]]
             name = "completed"
-            argv = ["foo"]
+            exec = "foo"
             ready = {completed={}}
 
             [[program]]
-            name = "endpoint"
-            argv = ["foo"]
+            name = "healthcheck"
+            exec = "foo"
             ready = {healthcheck={port=123, path="/health", host="localhost"}}
             "#;
 
@@ -346,11 +348,11 @@ mod tests {
         let toml = r#"
             [[program]]
             name = "default"
-            argv = ["foo"]
+            exec = "foo"
 
             [[program]]
             name = "port"
-            argv = ["foo"]
+            exec = "foo"
             depends = ["default"]
             "#;
 

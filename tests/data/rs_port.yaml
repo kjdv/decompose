@@ -1,7 +1,7 @@
 program:
   - name: prog
-    argv:
-      - ./target/testrun/bin/server
+    exec: ./target/testrun/bin/server
+    args:
       - --address=127.0.0.1:9093
     ready:
       port: 9093

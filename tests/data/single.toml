@@ -1,4 +1,4 @@
 [[program]]
 name = "single"
-argv = ["./target/testrun/bin/sigterm_intercept"]
+exec = "./target/testrun/bin/sigterm_intercept"
 ready = {timer=0.1}

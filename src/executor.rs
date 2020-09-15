@@ -310,8 +310,8 @@ fn create_child_process(
 ) -> tokio_utils::Result<(tokio::process::Child, ProcessInfo)> {
     use std::str::FromStr;
 
-    let executable = std::fs::canonicalize(&prog.argv[0])
-        .or_else(|_| std::path::PathBuf::from_str(&prog.argv[0]))
+    let executable = std::fs::canonicalize(&prog.exec)
+        .or_else(|_| std::path::PathBuf::from_str(&prog.exec))
         .map_err(tokio_utils::make_err)?;
     let current_dir = std::fs::canonicalize(prog.cwd.clone())?;
     log::debug!(
@@ -321,7 +321,7 @@ fn create_child_process(
     );
 
     let child = Command::new(executable)
-        .args(&prog.argv.as_slice()[1..])
+        .args(&prog.args)
         .envs(&prog.env)
         .current_dir(current_dir)
         .stdout(std::process::Stdio::piped())

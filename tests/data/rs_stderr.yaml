@@ -1,7 +1,7 @@
 program:
     - name: prog
-      argv:
-        - ./target/testrun/bin/sigterm_intercept
+      exec: ./target/testrun/bin/sigterm_intercept
+      args:
         - --err
       ready:
         stderr: ^.*SIGTERM.*$

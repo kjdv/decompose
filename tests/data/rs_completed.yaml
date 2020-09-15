@@ -1,12 +1,11 @@
 program:
   - name: dep
-    argv:
-      - /bin/ls
+    exec: /bin/ls
     ready:
       completed:
   - name: prog
-    argv:
-      - ./target/testrun/bin/server
+    exec: ./target/testrun/bin/server
+    args:
       - --address=127.0.0.1:9093
     ready:
       healthcheck: 

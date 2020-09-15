@@ -1,7 +1,6 @@
 start_timeout: 0.01
 program:
   - name: prog
-    argv:
-      - ./target/testrun/bin/sigterm_intercept
+    exec: ./target/testrun/bin/sigterm_intercept
     ready:
       stdout: never happens
