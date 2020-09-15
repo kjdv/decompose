@@ -1,12 +1,15 @@
 extern crate clap;
 extern crate string_error;
+extern crate tokio;
 
-use std::io::{Read, Write};
-use std::net::{TcpListener, TcpStream};
+use std::marker::Unpin;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{TcpListener, TcpStream};
 
-type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+type Result<T> = std::result::Result<T, tokio::io::Error>;
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let args = clap::App::new("proxy")
         .author("Klaas de Vries")
         .about("simple forwding, for aide in automated tests of decompose")
@@ -28,45 +31,100 @@ fn main() {
 
     let address = args.value_of("address").unwrap();
     let forward = args.value_of("forward").unwrap();
-    serve(address, forward);
+    serve(address, forward).await;
 }
 
-fn serve(address: &str, forward: &str) {
+async fn serve(address: &str, forward: &str) {
+    use std::str::FromStr;
+
     println!("listening at {}, forwarding to {}", address, forward);
 
-    let listener = TcpListener::bind(address).expect("bind");
+    let mut listener = TcpListener::bind(address).await.expect("bind");
 
-    for stream in listener.incoming() {
-        println!("new connection");
+    loop {
+        let (stream, remote_address) = listener.accept().await.expect("accept");
+        println!("new connection from {}", remote_address);
 
-        match handle(stream.expect("stream"), &forward) {
-            Ok(_) => println!("done"),
-            Err(e) => println!("Error: {}", e),
-        };
+        let fs = String::from_str(forward).expect("from_str");
+        tokio::spawn(handle_wrap(stream, fs));
     }
 }
 
-fn handle(mut stream: TcpStream, forward: &str) -> Result<()> {
-    let mut buf = [0; 512];
-
-    let size = stream.read(&mut buf)?;
-
-    if size == 0 {
-        return Err(string_error::new_err("0 read"));
+async fn handle_wrap(from_stream: TcpStream, forward: String) {
+    if let Err(e) = handle(from_stream, forward).await {
+        println!("Error: {}", e);
     }
+}
 
-    println!("proxying '{}'", String::from_utf8_lossy(&buf[0..size]));
+async fn handle(from_stream: TcpStream, forward: String) -> Result<()> {
+    let to_stream = TcpStream::connect(forward).await?;
 
-    let mut forward = TcpStream::connect(forward)?;
-    forward.write_all(&buf[0..size])?;
-    forward.flush()?;
+    let from_stream = tokio::io::split(from_stream);
+    let to_stream = tokio::io::split(to_stream);
 
-    let size = forward.read(&mut buf)?;
-    if size == 0 {
-        return Err(string_error::new_err("0 read"));
+    proxy(from_stream, to_stream).await
+}
+
+async fn proxy<T, U, V, W>(stream1: (T, U), stream2: (V, W)) -> Result<()>
+where
+    T: AsyncReadExt + Unpin,
+    U: AsyncWriteExt + Unpin,
+    V: AsyncReadExt + Unpin,
+    W: AsyncWriteExt + Unpin,
+{
+    let (rx1, tx1) = stream1;
+    let (rx2, tx2) = stream2;
+
+    // Q: select or join?
+    tokio::select! {
+        x = copy(rx1, tx2) => {
+            match x {
+                Ok(_) => {
+                    println!("rx1->tx2 completed");
+                    Ok(())
+                },
+                Err(e) => {
+                    println!("rx1->tx2 errored: {}", e);
+                    Err(e)
+                }
+            }
+        },
+        x = copy(rx2, tx1) => {
+            match x {
+                Ok(_) => {
+                    println!("rx2->tx1 completed");
+                    Ok(())
+                },
+                Err(e) => {
+                    println!("rx2->tx1 errored: {}", e);
+                    Err(e)
+                }
+            }
+        }
     }
-    stream.write_all(&buf[0..size])?;
-    stream.flush()?;
+}
 
-    Ok(())
+async fn copy<T, U>(mut from: T, mut to: U) -> std::io::Result<()>
+where
+    T: AsyncReadExt + Unpin,
+    U: AsyncWriteExt + Unpin,
+{
+    const BUFSIZE: usize = 512;
+
+    let mut buf = [0; BUFSIZE];
+    loop {
+        let n = match from.read(&mut buf).await {
+            Err(e) => {
+                return Err(e);
+            }
+            Ok(0) => {
+                return Ok(());
+            }
+            Ok(n) => n,
+        };
+
+        if let Err(e) = to.write_all(&buf[0..n]).await {
+            return Err(e);
+        }
+    }
 }
