@@ -1,3 +1,5 @@
+start_timeout: 3
+
 program:
   - name: prog
     argv:

@@ -5,8 +5,6 @@ extern crate regex;
 extern crate reqwest;
 extern crate tokio;
 
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-
 use super::output::Receiver;
 use super::tokio_utils::make_err;
 
@@ -17,15 +15,16 @@ pub async fn nothing() -> Result {
 }
 
 pub async fn manual(name: &str) -> Result {
-    let mut stdout = tokio::io::stdout();
-    stdout
-        .write(format!("Manually waiting for {}, press enter\n", name).as_bytes())
-        .await?;
-    stdout.flush().await?;
+    // note: using sync io to get around the timer killing us off
 
-    let mut stdin = tokio::io::stdin();
+    use std::io::Read;
+
+    println!("Manually waiting for {}, press enter", name);
+
+    let mut stdin = std::io::stdin();
     let mut buf = [0; 1];
-    stdin.read(&mut buf).await?;
+    let _ = stdin.read(&mut buf)?;
+
     Ok(true)
 }
 

@@ -255,6 +255,6 @@ pub fn call(port: u16, path: &str) -> Result<String> {
     let body = response.text()?;
     match good {
         true => Ok(body),
-        false => Err(string_error::into_err(body))
+        false => Err(string_error::into_err(body)),
     }
 }
