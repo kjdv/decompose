@@ -1,7 +1,9 @@
 extern crate chrono;
+extern crate colored;
 extern crate tokio;
 
 use super::config;
+use colored::Color;
 use std::path::{Path, PathBuf};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::broadcast;
@@ -10,8 +12,8 @@ pub type Sender = broadcast::Sender<String>;
 pub type Receiver = broadcast::Receiver<String>;
 
 pub trait OutputFactory {
-    fn stdout(&self, prog: &config::Program) -> Sender;
-    fn stderr(&self, prog: &config::Program) -> Sender {
+    fn stdout(&mut self, prog: &config::Program) -> Sender;
+    fn stderr(&mut self, prog: &config::Program) -> Sender {
         self.stdout(prog)
     }
 }
@@ -68,7 +70,7 @@ where
 pub struct NullOutputFactory();
 
 impl OutputFactory for NullOutputFactory {
-    fn stdout(&self, _: &config::Program) -> Sender {
+    fn stdout(&mut self, _: &config::Program) -> Sender {
         let (tx, rx) = make_channel();
 
         tokio::spawn(consume(rx, tokio::io::sink(), |s| s));
@@ -76,27 +78,47 @@ impl OutputFactory for NullOutputFactory {
     }
 }
 
-pub struct InheritOutputFactory();
+pub struct InheritOutputFactory {
+    color_cycle: std::iter::Cycle<std::slice::Iter<'static, Color>>,
+}
 
 impl InheritOutputFactory {
-    fn formatter(&self, prog: &config::Program) -> impl Fn(String) -> String {
+    pub fn new() -> InheritOutputFactory {
+        InheritOutputFactory {
+            // restrict to neutral colors for stdout, red is for stderr
+            color_cycle: [
+                Color::Green,
+                Color::Yellow,
+                Color::Blue,
+                Color::Magenta,
+                Color::Cyan,
+            ]
+            .iter()
+            .cycle(),
+        }
+    }
+
+    fn formatter(&self, prog: &config::Program, color: Color) -> impl Fn(String) -> String {
+        use colored::Colorize;
+
         let tag = prog.name.clone();
-        move |s| format!("[{}] => {}\n", tag.clone(), s)
+        move |s| format!("[{}] {}\n", tag.clone().color(color), s)
     }
 }
 
 impl OutputFactory for InheritOutputFactory {
-    fn stdout(&self, prog: &config::Program) -> Sender {
+    fn stdout(&mut self, prog: &config::Program) -> Sender {
         let (tx, rx) = make_channel();
-        let fmt = self.formatter(prog);
+        let color = *self.color_cycle.next().unwrap();
+        let fmt = self.formatter(prog, color);
 
         tokio::spawn(consume(rx, tokio::io::stdout(), fmt));
         tx
     }
 
-    fn stderr(&self, prog: &config::Program) -> Sender {
+    fn stderr(&mut self, prog: &config::Program) -> Sender {
         let (tx, rx) = make_channel();
-        let fmt = self.formatter(prog);
+        let fmt = self.formatter(prog, Color::Red);
 
         tokio::spawn(consume(rx, tokio::io::stderr(), fmt));
         tx
@@ -151,11 +173,11 @@ impl OutputFileFactory {
 }
 
 impl OutputFactory for OutputFileFactory {
-    fn stdout(&self, prog: &config::Program) -> Sender {
+    fn stdout(&mut self, prog: &config::Program) -> Sender {
         self.stream(format!("{}.out", prog.name))
     }
 
-    fn stderr(&self, prog: &config::Program) -> Sender {
+    fn stderr(&mut self, prog: &config::Program) -> Sender {
         self.stream(format!("{}.err", prog.name))
     }
 }
@@ -244,7 +266,7 @@ mod tests {
         sys.program[0].clone()
     }
 
-    fn produce_data<F: OutputFactory>(data: String, output: F) {
+    fn produce_data<F: OutputFactory>(data: String, mut output: F) {
         let prog = make_prog("blah");
 
         tokio_utils::run(async move {

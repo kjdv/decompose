@@ -36,7 +36,10 @@ impl Executor {
         })
     }
 
-    pub async fn start(&mut self, output_factory: Box<dyn output::OutputFactory>) -> Result<()> {
+    pub async fn start(
+        &mut self,
+        mut output_factory: Box<dyn output::OutputFactory>,
+    ) -> Result<()> {
         log::info!("starting execution");
 
         let (tx, mut rx) = mpsc::channel(100);

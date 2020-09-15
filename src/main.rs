@@ -129,7 +129,7 @@ fn output_factory(
 ) -> Result<Box<dyn output::OutputFactory>, Box<dyn Error>> {
     let of: Box<dyn output::OutputFactory> = match arg {
         "null" => Box::new(output::NullOutputFactory {}),
-        "inline" => Box::new(output::InheritOutputFactory {}),
+        "inline" => Box::new(output::InheritOutputFactory::new()),
         "files" => {
             let od_arg = std::path::Path::new(od_arg);
             let of = output::OutputFileFactory::new(od_arg)?;

@@ -252,6 +252,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "colored"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b3616f750b84d8f0de8a58bda93e08e2a81ad3f523089b05f1dffecab48c6cbd"
+dependencies = [
+ "atty",
+ "lazy_static",
+ "winapi 0.3.9",
+]
+
+[[package]]
 name = "constant_time_eq"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -299,6 +310,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "clap",
+ "colored 2.0.0",
  "escargot",
  "futures",
  "log 0.4.11",
@@ -1658,7 +1670,7 @@ checksum = "13a53ed2efd04911c8280f2da7bf9abd350c931b86bc7f9f2386fbafbf525ff9"
 dependencies = [
  "atty",
  "chrono",
- "colored",
+ "colored 1.9.3",
  "log 0.4.11",
  "winapi 0.3.9",
 ]
