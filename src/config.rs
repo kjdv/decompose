@@ -1,5 +1,6 @@
 extern crate serde;
 extern crate serde_any;
+extern crate shellexpand;
 
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -97,13 +98,22 @@ fn localhost() -> String {
 
 impl System {
     pub fn from_file(filename: &str) -> Result<System> {
-        let s = serde_any::from_file(filename);
-        System::validate(s)
+        let format = serde_any::guess_format(filename);
+        let raw_data = std::fs::read_to_string(filename)?;
+        Self::from_str(raw_data.as_str(), format)
     }
 
     #[allow(dead_code)] // surpress false warning, used in tests
     pub fn from_toml(toml: &str) -> Result<System> {
-        let s = serde_any::from_str(toml, serde_any::Format::Toml);
+        Self::from_str(toml, Some(serde_any::Format::Toml))
+    }
+
+    fn from_str(raw_data: &str, format: Option<serde_any::Format>) -> Result<System> {
+        let expanded = shellexpand::env(raw_data)?;
+        let s = match format {
+            Some(format) => serde_any::from_str(&expanded, format),
+            None => serde_any::from_str_any(&expanded),
+        };
         System::validate(s)
     }
 
@@ -360,5 +370,25 @@ mod tests {
 
         assert!(res.program[0].depends.is_empty());
         assert_eq!(vec!["default"], res.program[1].depends);
+    }
+
+    #[test]
+    fn test_env_vars_are_expanded() {
+        use std::env::set_var;
+
+        set_var("TEST_NAME", "testingtesting");
+        set_var("TEST_FOO", "bar");
+
+        let toml = r#"
+            [[program]]
+            name = "$TEST_NAME"
+            exec = "${TEST_FOO}"
+            args = ["${TEST_CWD:-here}"]
+        "#;
+        let sys = System::from_toml(toml).unwrap();
+
+        assert_eq!(sys.program[0].name, "testingtesting");
+        assert_eq!(sys.program[0].exec, "bar");
+        assert_eq!(sys.program[0].args[0], "here");
     }
 }

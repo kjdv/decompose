@@ -9,6 +9,7 @@ edition = "2018"
 [dependencies]
 serde_any = "^0.5.0"
 serde = "^1"
+shellexpand = "2.0.0"
 log = "^0.4.8"
 simple_logger = "^1.9.0"
 clap = "^2.33.0"

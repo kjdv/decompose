@@ -44,11 +44,19 @@ mod ensemble {
 
     #[test]
     fn sets_env() {
+        std::env::set_var("DYN_FOO", "dynamic");
+
         let mut f = Fixture::new("ensemble.toml");
         assert_ready(&mut f);
 
-        let body = call(9090, "env?key=FOO").expect("call");
-        assert_eq!("BAR".to_string(), body);
+        let foo = call(9090, "env?key=FOO").expect("call");
+        assert_eq!("BAR".to_string(), foo);
+
+        let dyn_foo = call(9090, "env?key=DYN_FOO").expect("call");
+        assert_eq!("dynamic".to_string(), dyn_foo);
+
+        let def_foo = call(9090, "env?key=DEF_FOO").expect("call");
+        assert_eq!("default".to_string(), def_foo);
     }
 
     #[test]

@@ -2,7 +2,7 @@
 name = "server"
 exec = "./target/testrun/bin/server"
 args = ["extra", "arg", "--address", "127.0.0.1:9090"]
-env = { FOO = "BAR" }
+env = { FOO = "BAR", DYN_FOO = "${DYN_FOO:-notset}", DEF_FOO = "${DEF_FOO:-default}" }
 cwd = "./target/testrun"
 ready = { port = 9090 }
 
