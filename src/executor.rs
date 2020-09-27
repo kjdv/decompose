@@ -93,6 +93,12 @@ impl Executor {
     }
 
     pub async fn run(&mut self) -> Result<()> {
+        let res = self.do_run().await;
+        self.stop().await;
+        res
+    }
+
+    async fn do_run(&mut self) -> Result<()> {
         loop {
             let r = tokio::select! {
                 _ = wait_for_signal(SignalKind::child()) => {
@@ -118,7 +124,7 @@ impl Executor {
         }
     }
 
-    pub async fn stop(&mut self) {
+    async fn stop(&mut self) {
         let (tx, mut rx) = mpsc::channel(100);
 
         let leaves: Vec<_> = self.dependency_graph.leaves().collect();
@@ -174,15 +180,6 @@ impl Executor {
             }
         };
         self.running.retain(|_, v| v.as_ref().map_or(false, alive));
-    }
-}
-
-impl Drop for Executor {
-    fn drop(&mut self) {
-        // optimize: don't bother constructing a runtime if everything is stopped already
-        if !self.running.is_empty() {
-            tokio_utils::run(self.stop());
-        }
     }
 }
 

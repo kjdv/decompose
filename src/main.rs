@@ -84,12 +84,10 @@ files => log files for each process will be places in --outdir",
         args.value_of("outdir").expect("outdir"),
     )?;
 
-    let mut exec = executor::Executor::from_config(&sys)?;
     tokio_utils::run(async move {
+        let mut exec = executor::Executor::from_config(&sys)?;
         exec.start(of).await?;
-        let res = exec.run().await;
-        exec.stop().await;
-        res
+        exec.run().await
     })?;
 
     Ok(())
@@ -98,12 +96,6 @@ files => log files for each process will be places in --outdir",
 fn default_outdir() -> String {
     use std::str::FromStr;
     String::from_str(".decompose").unwrap()
-
-    /*
-    let mut cwd = std::env::current_dir().unwrap();
-    cwd.push(".decompose");
-    let cwd = cwd.into_os_string();
-    cwd.into_string().unwrap()*/
 }
 
 fn init_logging(arg: &str) -> Result<(), Box<dyn Error>> {
