@@ -79,7 +79,7 @@ pub async fn output(mut rx: Receiver, re: &str) -> Result {
 
 pub async fn healthcheck(host: &str, port: u16, path: &str) -> Result {
     let interval = std::time::Duration::from_millis(1);
-    let endpoint = format!("http://{}:{}/{}", host, port, path);
+    let endpoint = format!("http://{}:{}{}", host, port, path);
     loop {
         let response = reqwest::get(endpoint.as_str()).await;
         if let Ok(r) = response {

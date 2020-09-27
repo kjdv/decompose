@@ -10,6 +10,6 @@ program:
     ready:
       healthcheck: 
         port: 9093
-        path: health
+        path: /health
     depends:
       - dep
