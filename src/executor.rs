@@ -102,7 +102,12 @@ impl Executor {
         loop {
             let r = tokio::select! {
                 _ = wait_for_signal(SignalKind::child()) => {
-                    self.check_alive();
+                    let teardown = self.check_alive();
+
+                    if teardown {
+                        log::info!("critical program stoppend, tearing down system");
+                        self.stop().await;
+                    }
 
                     if self.running.is_empty() {
                         log::info!("no running processes left");
@@ -169,7 +174,7 @@ impl Executor {
         }
     }
 
-    fn check_alive(&mut self) {
+    fn check_alive(&mut self) -> bool {
         let alive = |p: &Process| {
             if p.is_alive() {
                 log::debug!("{} still alive", p);
@@ -179,7 +184,14 @@ impl Executor {
                 false
             }
         };
+        let teardown_check = |p: &Process| !alive(p) && p.critical;
+
+        let teardown = self
+            .running
+            .iter()
+            .any(|(_, v)| v.as_ref().map_or(false, teardown_check));
         self.running.retain(|_, v| v.as_ref().map_or(false, alive));
+        teardown
     }
 }
 
@@ -187,6 +199,7 @@ impl Executor {
 struct Process {
     proc: Option<Box<tokio::process::Child>>,
     info: ProcessInfo,
+    critical: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -196,19 +209,21 @@ struct ProcessInfo {
 }
 
 impl Process {
-    fn new(proc: Option<tokio::process::Child>, info: ProcessInfo) -> Process {
+    fn new(proc: Option<tokio::process::Child>, info: ProcessInfo, critical: bool) -> Process {
         Process {
             proc: proc.map(Box::new),
             info,
+            critical,
         }
     }
 
     #[allow(dead_code)]
-    fn new_with_name(proc: tokio::process::Child, name: String) -> Process {
+    fn new_with_name(proc: tokio::process::Child, name: String, critical: bool) -> Process {
         let pid = proc.id();
         Process {
             proc: Some(Box::new(proc)),
             info: ProcessInfo { name, pid },
+            critical,
         }
     }
 
@@ -292,7 +307,7 @@ async fn do_start_program(
     match rs {
         true => {
             log::info!("{} ready", info);
-            Ok(Process::new(child, info))
+            Ok(Process::new(child, info, prog.critical))
         }
         false => {
             let msg = format!("{} not ready", info);
@@ -361,7 +376,9 @@ async fn do_stop(proc: Process, timeout: Duration) {
 }
 
 async fn dummy_stop(h: NodeHandle, mut completed: mpsc::Sender<NodeHandle>) {
-    completed.send(h).await.expect("channel error");
+    if let Err(e) = completed.send(h).await {
+        log::warn!("{}", e);
+    }
 }
 
 fn is_alive(pid: u32) -> bool {
@@ -420,6 +437,7 @@ mod tests {
                 .spawn()
                 .expect("cat"),
             "cat".to_string(),
+            false,
         );
         let pid = proc.info.pid;
 
@@ -441,6 +459,7 @@ mod tests {
                 .spawn()
                 .expect("cat"),
             "catname".to_string(),
+            false,
         );
 
         let fmt = format!("{}", proc.info);

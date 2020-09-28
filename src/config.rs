@@ -35,14 +35,14 @@ pub struct Program {
     #[serde(default = "default_cwd")]
     pub cwd: String,
 
-    #[serde(default = "default_enabled")]
-    pub enabled: bool,
-
     #[serde(default = "default_ready_signal")]
     pub ready: ReadySignal,
 
     #[serde(default = "default_depends")]
     pub depends: Vec<String>,
+
+    #[serde(default)]
+    pub critical: bool,
 }
 
 #[derive(Deserialize, Debug, PartialEq, Clone)]
@@ -70,10 +70,6 @@ fn default_cwd() -> String {
     let cwd = std::env::current_dir().unwrap();
     let cwd = cwd.into_os_string();
     cwd.into_string().unwrap()
-}
-
-fn default_enabled() -> bool {
-    true
 }
 
 fn default_terminate_timeout() -> f64 {
@@ -162,14 +158,13 @@ mod tests {
             args = ["def"]
             env = {ghi = "jkl", mno = "pqr"}
             cwd = "/tmp"
-            enabled = true
-
+       
             [[program]]
             name = "prog2"
             exec = "exec"
             env = {}
             cwd = "."
-            enabled = false
+            critical = true
         "#;
 
         let system = System::from_toml(toml).unwrap();
@@ -185,7 +180,7 @@ mod tests {
         assert_eq!("jkl", prog1.env.get("ghi").unwrap());
         assert_eq!("pqr", prog1.env.get("mno").unwrap());
         assert_eq!("/tmp", prog1.cwd);
-        assert_eq!(true, prog1.enabled);
+        assert_eq!(false, prog1.critical);
 
         let prog2 = &system.program[1];
 
@@ -194,7 +189,7 @@ mod tests {
         assert!(prog2.args.is_empty());
         assert_eq!(0, prog2.env.len());
         assert_eq!(".", prog2.cwd);
-        assert_eq!(false, prog2.enabled);
+        assert_eq!(true, prog2.critical);
     }
 
     #[test]
@@ -214,7 +209,6 @@ mod tests {
 
         assert_eq!(0, prog.env.len());
         assert_eq!(default_cwd(), prog.cwd);
-        assert_eq!(true, prog.enabled);
         assert_eq!(ReadySignal::Nothing, prog.ready);
     }
 

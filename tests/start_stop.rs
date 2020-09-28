@@ -41,4 +41,19 @@ mod start_stop {
         let mut f = Fixture::new("timeout.yaml");
         f.expect_exited();
     }
+
+    #[test]
+    fn critical_tears_down_system() {
+        let mut f = Fixture::new("critical.toml");
+
+        let srv = f.expect_program_ready();
+        assert_eq!("server", srv.name);
+
+        let task = f.expect_program_ready();
+        assert_eq!("task", task.name);
+
+        f.expect_program_dies(&task);
+        f.expect_program_terminates(&srv);
+        f.expect_stop();
+    }
 }
