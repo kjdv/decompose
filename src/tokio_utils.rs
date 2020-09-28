@@ -36,6 +36,15 @@ pub async fn with_timeout<R>(
     }
 }
 
+pub async fn wait_for_signal(kind: tokio::signal::unix::SignalKind) -> Result<()> {
+    use tokio::signal::unix::signal;
+
+    let mut sig = signal(kind)?;
+    sig.recv().await;
+    log::info!("received signal {:?}", kind);
+    Ok(())
+}
+
 #[cfg(test)]
 pub mod tests {
     use super::*;

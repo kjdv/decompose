@@ -8,6 +8,7 @@ mod config;
 mod executor;
 mod graph;
 mod output;
+mod process;
 mod readysignals;
 mod tokio_utils;
 

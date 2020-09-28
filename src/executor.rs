@@ -108,7 +108,7 @@ impl Executor {
 
         loop {
             let r = tokio::select! {
-                _ = wait_for_signal(SignalKind::child()) => {
+                _ = tokio_utils::wait_for_signal(SignalKind::child()) => {
                     let teardown = self.check_alive();
 
                     if teardown {
@@ -123,8 +123,8 @@ impl Executor {
                         Ok(true)
                     }
                 },
-                x = wait_for_signal(SignalKind::interrupt()) => x.map(|_| false),
-                x = wait_for_signal(SignalKind::terminate()) => x.map(|_| false),
+                x = tokio_utils::wait_for_signal(SignalKind::interrupt()) => x.map(|_| false),
+                x = tokio_utils::wait_for_signal(SignalKind::terminate()) => x.map(|_| false),
             };
             match r {
                 Ok(true) => (),
@@ -413,15 +413,6 @@ fn terminate(pid: u32) -> Result<()> {
     let sig = nix_signal::Signal::SIGTERM;
 
     nix_signal::kill(pid, sig).map_err(|e| e.into())
-}
-
-async fn wait_for_signal(kind: SignalKind) -> tokio_utils::Result<()> {
-    use tokio::signal::unix::signal;
-
-    let mut sig = signal(kind)?;
-    sig.recv().await;
-    log::info!("received signal {:?}", kind);
-    Ok(())
 }
 
 async fn terminate_wait(
