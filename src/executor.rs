@@ -99,6 +99,13 @@ impl Executor {
     }
 
     async fn do_run(&mut self) -> Result<()> {
+        if self.check_alive() {
+            // over for it started
+            log::info!("critical program stoppend, tearing down system");
+            self.stop().await;
+            return Ok(());
+        }
+
         loop {
             let r = tokio::select! {
                 _ = wait_for_signal(SignalKind::child()) => {

@@ -56,4 +56,19 @@ mod start_stop {
         f.expect_program_terminates(&srv);
         f.expect_stop();
     }
+
+    #[test]
+    fn critical_tears_down_system_for_completed_task() {
+        let mut f = Fixture::new("critical_complete.toml");
+
+        let srv = f.expect_program_ready();
+        assert_eq!("server", srv.name);
+
+        let task = f.expect_program_ready();
+        assert_eq!("task", task.name);
+
+        f.expect_program_dies(&task);
+        f.expect_program_terminates(&srv);
+        f.expect_stop();
+    }
 }
