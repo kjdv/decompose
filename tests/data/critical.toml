@@ -1,0 +1,11 @@
+[[program]]
+name = "server"
+exec = "./target/testrun/bin/server"
+args = ["--address=127.0.0.1:9094"]
+ready = {port=9094}
+
+[[program]]
+name = "task"
+exec = "/bin/ls"
+critical = true
+depends = ["server"]

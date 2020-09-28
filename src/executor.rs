@@ -274,6 +274,16 @@ async fn do_start_program(
 ) -> tokio_utils::Result<Process> {
     use config::ReadySignal;
 
+    if prog.disabled {
+        log::info!("{} disabled, not starting", prog.name);
+        let info = ProcessInfo {
+            name: prog.name,
+            pid: 0,
+        };
+        let proc = Process::new(None, info, false);
+        return Ok(proc);
+    }
+
     let (mut child, info) = create_child_process(&prog)?;
 
     let monitor_out = stdout.subscribe();

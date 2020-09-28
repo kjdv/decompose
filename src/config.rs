@@ -43,6 +43,9 @@ pub struct Program {
 
     #[serde(default)]
     pub critical: bool,
+
+    #[serde(default)]
+    pub disabled: bool,
 }
 
 #[derive(Deserialize, Debug, PartialEq, Clone)]
@@ -165,6 +168,7 @@ mod tests {
             env = {}
             cwd = "."
             critical = true
+            disabled = true
         "#;
 
         let system = System::from_toml(toml).unwrap();
@@ -181,6 +185,7 @@ mod tests {
         assert_eq!("pqr", prog1.env.get("mno").unwrap());
         assert_eq!("/tmp", prog1.cwd);
         assert_eq!(false, prog1.critical);
+        assert_eq!(false, prog1.disabled);
 
         let prog2 = &system.program[1];
 
@@ -190,6 +195,7 @@ mod tests {
         assert_eq!(0, prog2.env.len());
         assert_eq!(".", prog2.cwd);
         assert_eq!(true, prog2.critical);
+        assert_eq!(true, prog2.disabled);
     }
 
     #[test]

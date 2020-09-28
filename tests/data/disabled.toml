@@ -1,0 +1,16 @@
+[[program]]
+name = "server"
+exec = "./target/testrun/bin/server"
+args = ["extra", "arg", "--address", "127.0.0.1:9095"]
+env = { FOO = "BAR", DYN_FOO = "${DYN_FOO:-notset}", DEF_FOO = "${DEF_FOO:-default}" }
+cwd = "./target/testrun"
+ready = { port = 9095 }
+disabled = true
+critical = true
+
+[[program]]
+name = "proxy"
+exec = "./target/testrun/bin/proxy"
+args = ["--address", "127.0.0.1:9096", "--forward", "127.0.0.1:9095"]
+depends = ["server"]
+ready = { port = 9096 }

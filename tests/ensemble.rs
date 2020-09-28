@@ -67,4 +67,22 @@ mod ensemble {
         let body = call(9090, "cwd").expect("call");
         assert!(body.ends_with("target/testrun"));
     }
+
+    #[test]
+    fn starts_with_some_services_disabled() {
+        let mut f = Fixture::new("disabled.toml");
+        f.expect_start();
+
+        let srv = f.expect_program_disabled();
+        assert_eq!("server", srv.name);
+
+        let proxy = f.expect_program_ready();
+        assert_eq!("proxy", proxy.name);
+
+        call(9096, "hello").expect_err("call");
+        f.stop();
+
+        f.expect_program_terminates(&proxy);
+        f.expect_stop();
+    }
 }

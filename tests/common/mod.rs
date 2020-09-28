@@ -183,6 +183,14 @@ impl Fixture {
         }
     }
 
+    pub fn expect_program_disabled(&mut self) -> ProgramInfo {
+        let caps = self.expect_line(r"\[decompose::executor\] ([a-zA-Z][a-zA-Z0-9]+) disabled");
+        ProgramInfo {
+            name: caps.get(1).unwrap().to_string(),
+            pid: 0,
+        }
+    }
+
     pub fn expect_program_dies(&mut self, prog: &ProgramInfo) {
         let re = format!("\\[decompose::executor\\] {} stopped", *prog);
         self.expect_line(re.as_str());
