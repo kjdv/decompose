@@ -394,7 +394,7 @@ async fn do_stop(proc: Process, timeout: Duration) {
 
 async fn dummy_stop(h: NodeHandle, mut completed: mpsc::Sender<NodeHandle>) {
     if let Err(e) = completed.send(h).await {
-        log::warn!("{}", e);
+        log::debug!("{}", e);
     }
 }
 
