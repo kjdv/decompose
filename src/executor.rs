@@ -134,6 +134,7 @@ impl Executor {
         let p = self.dependency_graph.node(handle).clone();
 
         log::info!("starting program {}", p.name);
+
         let cmd = Command::Start((handle, p));
 
         self.send(cmd).await;
@@ -418,5 +419,29 @@ mod tests {
 
         fixture.exec.shutdown().await.unwrap();
         fixture.expect_nothing().await;
+    }
+
+    #[tokio::test]
+    async fn temporarily_nothing_running_is_allowed_during_startup() {
+        let toml = r#"
+        [[program]]
+        name = "a"
+        exec = "e"
+
+        [[program]]
+        name = "b"
+        exec = "e"
+        depends = "a"
+        "#;
+
+        let mut fixture = Fixture::new(toml).unwrap();
+        fixture.exec.init().await.unwrap();
+
+        let a = fixture.expect_start("a").await;
+        fixture.exec.process(Event::Started(a)).await.unwrap();
+        fixture.exec.process(Event::Stopped(a)).await.unwrap();
+
+        assert!(fixture.exec.is_alive());
+        fixture.expect_start("b").await;
     }
 }
