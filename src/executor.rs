@@ -2,13 +2,10 @@ extern crate nix;
 extern crate tokio;
 
 use super::config;
-use super::output;
-use super::tokio_utils;
 
 use super::graph::{Graph, NodeHandle};
 use super::process;
 use std::collections::HashSet;
-use std::time::Duration;
 
 use process::mpsc;
 use process::Command;
@@ -21,6 +18,7 @@ pub struct Executor {
     tx: process::mpsc::Sender<Command>,
     rx: process::mpsc::Receiver<Event>,
     running: HashSet<NodeHandle>,
+    shutting_down: bool,
 }
 
 impl Executor {
@@ -36,6 +34,7 @@ impl Executor {
             tx,
             rx,
             running: HashSet::new(),
+            shutting_down: false,
         })
     }
 
@@ -43,7 +42,7 @@ impl Executor {
         self.init().await?;
 
         while let Some(event) = self.rx.recv().await {
-            if !self.process(event).await? {
+            if !self.process(event).await? || !self.is_alive() {
                 break;
             }
         }
@@ -61,7 +60,10 @@ impl Executor {
                 Ok(true)
             }
             Event::Stopped(h) => Ok(self.on_stopped(h).await),
-            Event::Shutdown => Ok(false),
+            Event::Shutdown => {
+                self.shutdown().await?;
+                Ok(true)
+            }
             Event::Err(e) => {
                 log::error!("{}", e);
                 Err(e.into())
@@ -69,6 +71,7 @@ impl Executor {
         }
     }
 
+    #[allow(dead_code)] // surpress false warning, used in tests
     fn is_alive(&self) -> bool {
         !self.running.is_empty()
     }
@@ -81,6 +84,13 @@ impl Executor {
     }
 
     async fn shutdown(&mut self) -> Result<()> {
+        self.shutting_down = true;
+
+        if self.is_alive() {
+            for h in self.dependency_graph.leaves() {
+                self.send_stop(h).await;
+            }
+        }
         Ok(())
     }
 
@@ -96,12 +106,23 @@ impl Executor {
     }
 
     async fn on_stopped(&mut self, handle: NodeHandle) -> bool {
-        if let Some(h) = self.running.take(&handle) {
-            let p = self.dependency_graph.node(handle);
+        let r = if let Some(h) = self.running.take(&handle) {
+            let p = self.dependency_graph.node(h);
             !p.critical
         } else {
             true
+        };
+
+        if self.shutting_down {
+            for h in self
+                .dependency_graph
+                .expand_back(handle, |n| !self.running.contains(&n))
+            {
+                self.send_stop(h).await;
+            }
         }
+
+        r
     }
 
     async fn send_start(&self, handle: NodeHandle) {
@@ -110,13 +131,20 @@ impl Executor {
         log::info!("starting program {}", p.name);
         let cmd = Command::Start((handle, p));
 
-        Self::send_tx(self.tx.clone(), cmd).await;
+        self.send(cmd).await;
     }
 
-    async fn stop(&self) {}
+    async fn send_stop(&self, handle: NodeHandle) {
+        let p = self.dependency_graph.node(handle);
+
+        log::info!("stopping program {}", p.name);
+        let cmd = Command::Stop(handle);
+
+        self.send(cmd).await;
+    }
 
     async fn send(&self, cmd: Command) {
-        Self::send_tx(self.tx.clone(), cmd);
+        Self::send_tx(self.tx.clone(), cmd).await;
     }
 
     async fn send_tx(mut tx: mpsc::Sender<Command>, cmd: Command) {
@@ -126,6 +154,7 @@ impl Executor {
 
 #[cfg(test)]
 mod tests {
+    use super::super::tokio_utils;
     use super::*;
 
     const TIMEOUT: std::time::Duration = std::time::Duration::from_millis(5);
@@ -167,6 +196,15 @@ mod tests {
                 Command::Start((h, p)) => {
                     assert_eq!(name, p.name);
                     h
+                }
+                _ => panic!("unexpected message"),
+            }
+        }
+
+        async fn expect_stop(&mut self, handle: NodeHandle) {
+            match self.recv().await {
+                Command::Stop(h) => {
+                    assert_eq!(h, handle);
                 }
                 _ => panic!("unexpected message"),
             }
@@ -303,5 +341,73 @@ mod tests {
 
         assert!(fixture.exec.process(Event::Stopped(b)).await.unwrap());
         assert!(!fixture.exec.process(Event::Stopped(c)).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn send_stop_while_not_shutting_down_has_no_further_effect() {
+        let toml = r#"
+        [[program]]
+        name = "a"
+        exec = "e"
+
+        [[program]]
+        name = "b"
+        exec = "e"
+        "#;
+
+        let mut fixture = Fixture::new(toml).unwrap();
+        fixture.exec.init().await.unwrap();
+        let a = fixture.expect_start("a").await;
+        fixture.expect_start("b").await;
+
+        fixture.exec.process(Event::Stopped(a)).await.unwrap();
+        fixture.expect_nothing().await;
+    }
+
+    #[tokio::test]
+    async fn send_stop_while_shutting_down_sends_stop_commands() {
+        let toml = r#"
+        [[program]]
+        name = "a"
+        exec = "e"
+
+        [[program]]
+        name = "b"
+        exec = "e"
+        depends = ["a"]
+        "#;
+
+        let mut fixture = Fixture::new(toml).unwrap();
+        fixture.exec.init().await.unwrap();
+        let a = fixture.expect_start("a").await;
+        fixture.exec.process(Event::Started(a)).await.unwrap();
+        let b = fixture.expect_start("b").await;
+
+        fixture.exec.shutdown().await.unwrap();
+        fixture.expect_stop(b).await;
+        fixture.expect_nothing().await;
+
+        fixture.exec.process(Event::Stopped(b)).await.unwrap();
+        fixture.expect_stop(a).await;
+    }
+
+    #[tokio::test]
+    async fn shutting_down_while_no_longer_alive_has_no_effect() {
+        let toml = r#"
+        [[program]]
+        name = "a"
+        exec = "e"
+        "#;
+
+        let mut fixture = Fixture::new(toml).unwrap();
+        fixture.exec.init().await.unwrap();
+        let a = fixture.expect_start("a").await;
+        fixture.exec.process(Event::Started(a)).await.unwrap();
+        fixture.exec.process(Event::Stopped(a)).await.unwrap();
+
+        assert!(!fixture.exec.is_alive());
+
+        fixture.exec.shutdown().await.unwrap();
+        fixture.expect_nothing().await;
     }
 }
