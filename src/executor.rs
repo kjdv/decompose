@@ -18,6 +18,7 @@ pub struct Executor {
     tx: process::mpsc::Sender<Command>,
     rx: process::mpsc::Receiver<Event>,
     running: HashSet<NodeHandle>,
+    pending: HashSet<NodeHandle>,
     shutting_down: bool,
 }
 
@@ -34,6 +35,7 @@ impl Executor {
             tx,
             rx,
             running: HashSet::new(),
+            pending: HashSet::new(),
             shutting_down: false,
         })
     }
@@ -81,10 +83,12 @@ impl Executor {
 
     #[allow(dead_code)] // surpress false warning, used in tests
     fn is_alive(&self) -> bool {
-        !self.running.is_empty()
+        !self.pending.is_empty() || !self.running.is_empty()
     }
 
     async fn init(&mut self) -> Result<()> {
+        self.pending = self.dependency_graph.all().collect();
+
         for h in self.dependency_graph.roots() {
             self.send_start(h).await;
         }
@@ -92,6 +96,8 @@ impl Executor {
     }
 
     async fn shutdown(&mut self) -> Result<()> {
+        log::debug!("initiating shutdown");
+
         self.shutting_down = true;
 
         if self.is_alive() {
@@ -103,6 +109,7 @@ impl Executor {
     }
 
     async fn on_started(&mut self, handle: NodeHandle) {
+        self.pending.remove(&handle);
         self.running.insert(handle);
 
         for h in self
@@ -117,7 +124,9 @@ impl Executor {
         if let Some(h) = self.running.take(&handle) {
             let p = self.dependency_graph.node(h);
             log::debug!("on stopped for {} {}", p.name, p.critical);
-            let _ = self.shutdown().await;
+            if p.critical {
+                let _ = self.shutdown().await;
+            }
         }
 
         if self.shutting_down {
@@ -431,7 +440,7 @@ mod tests {
         [[program]]
         name = "b"
         exec = "e"
-        depends = "a"
+        depends = ["a"]
         "#;
 
         let mut fixture = Fixture::new(toml).unwrap();

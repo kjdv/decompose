@@ -42,10 +42,6 @@ impl Graph {
         Ok(Graph { graph })
     }
 
-    pub fn len(&self) -> usize {
-        self.graph.node_count()
-    }
-
     pub fn node(&self, h: NodeHandle) -> &config::Program {
         &self.graph[h]
     }
@@ -56,6 +52,10 @@ impl Graph {
 
     pub fn leaves(&self) -> impl Iterator<Item = NodeHandle> + '_ {
         self.graph.externals(Outgoing)
+    }
+
+    pub fn all(&self) -> impl Iterator<Item = NodeHandle> + '_ {
+        self.graph.node_indices()
     }
 
     pub fn expand<'a, F>(
@@ -299,5 +299,42 @@ mod tests {
             .expand_back(expanded[0], |h| visited.contains(&h))
             .collect();
         assert_eq!(names(&graph, &expanded), vec!["b", "a"]);
+    }
+
+    #[test]
+    fn all_iterats_over_all_nodes() {
+        let cfg = r#"
+        [[program]]
+        name = "a"
+        exec = "a"
+
+        [[program]]
+        name = "b"
+        exec = "b"
+
+        [[program]]
+        name = "c"
+        exec = "c"
+        depends = ["a", "b"]
+
+        [[program]]
+        name = "d"
+        exec = "d"
+        depends = ["c"]
+
+        [[program]]
+        name = "e"
+        exec = "e"
+        depends = ["c"]
+        "#;
+
+        let graph = make(cfg);
+
+        let nodes: Vec<&str> = graph
+            .all()
+            .map(|h: NodeHandle| graph.node(h).name.as_str())
+            .collect();
+
+        assert_eq!(vec!["a", "b", "c", "d", "e"], nodes);
     }
 }
