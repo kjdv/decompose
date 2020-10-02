@@ -50,7 +50,7 @@ impl ProcessManager {
         }
     }
 
-    pub async fn run(&mut self) {
+    pub async fn run(&mut self) -> std::result::Result<(), Box<dyn std::error::Error>> {
         loop {
             let c = tokio::select! {
                 _ = tokio_utils::wait_for_signal(tokio_utils::SignalKind::child()) => {
@@ -95,6 +95,7 @@ impl ProcessManager {
                 break;
             }
         }
+        Ok(())
     }
 
     async fn start(&mut self, handle: NodeHandle, prog: config::Program) {
