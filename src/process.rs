@@ -76,11 +76,7 @@ impl ProcessManager {
                             true
                         }
                         Some(Command::Stop(h)) => {
-                            if let Some(p) = self.procs.get(&h) {
-                                log::debug!("got stop signal for {}", p.info)
-                            } else {
-                                log::warn!("no process tracked for handle")
-                            }
+                            self.stop(h).await;
                             true
                         },
                         None => {
@@ -99,7 +95,7 @@ impl ProcessManager {
     }
 
     async fn start(&mut self, handle: NodeHandle, prog: config::Program) {
-        log::info!("starting program {}", prog.name);
+        log::debug!("starting program {}", prog.name);
 
         let (stdout, stderr) = (
             self.output_factory.stdout(&prog),

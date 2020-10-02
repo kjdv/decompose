@@ -39,6 +39,8 @@ impl Executor {
     }
 
     pub async fn run(mut self) -> Result<()> {
+        log::info!("starting execution");
+
         self.init().await?;
 
         while let Some(event) = self.rx.recv().await {
@@ -50,7 +52,7 @@ impl Executor {
 
         self.shutdown().await?;
 
-        log::debug!("done");
+        log::info!("stopping execution");
         Ok(())
     }
 
@@ -88,7 +90,7 @@ impl Executor {
 
     async fn shutdown(&mut self) -> Result<()> {
         self.shutting_down = true;
-
+        
         if self.is_alive() {
             for h in self.dependency_graph.leaves() {
                 self.send_stop(h).await;
