@@ -50,7 +50,7 @@ impl ProcessManager {
         }
     }
 
-    pub async fn run(&mut self) -> std::result::Result<(), Box<dyn std::error::Error>> {
+    pub async fn run(mut self) -> std::result::Result<(), Box<dyn std::error::Error>> {
         loop {
             let c = tokio::select! {
                 _ = tokio_utils::wait_for_signal(tokio_utils::SignalKind::child()) => {

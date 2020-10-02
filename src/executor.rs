@@ -38,7 +38,7 @@ impl Executor {
         })
     }
 
-    pub async fn run(&mut self) -> Result<()> {
+    pub async fn run(mut self) -> Result<()> {
         self.init().await?;
 
         while let Some(event) = self.rx.recv().await {
@@ -46,8 +46,11 @@ impl Executor {
                 break;
             }
         }
+        log::debug!("broken from event loop");
 
         self.shutdown().await?;
+
+        log::debug!("done");
         Ok(())
     }
 

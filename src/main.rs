@@ -97,8 +97,8 @@ async fn run(
     let (cmd_tx, cmd_rx) = process::mpsc::channel(10);
     let (status_tx, status_rx) = process::mpsc::channel(10);
 
-    let mut process_manager = process::ProcessManager::new(cmd_rx, status_tx, &sys, of);
-    let mut exec = executor::Executor::from_config(&sys, cmd_tx, status_rx)?;
+    let process_manager = process::ProcessManager::new(cmd_rx, status_tx, &sys, of);
+    let exec = executor::Executor::from_config(&sys, cmd_tx, status_rx)?;
 
     tokio::try_join!(process_manager.run(), exec.run())?;
     log::debug!("done");
