@@ -3,36 +3,31 @@ extern crate tokio;
 
 use super::config;
 use super::output;
-use super::readysignals;
 use super::tokio_utils;
 
 use super::graph::{Graph, NodeHandle};
 use super::process;
-use nix::sys::signal as nix_signal;
 use std::collections::HashSet;
 use std::time::Duration;
-use tokio::process::Command;
-use tokio::signal::unix::SignalKind;
-use tokio::sync::mpsc;
 
-use process::ProcessCommandMessage;
-use process::ProcessStatusMessage;
+use process::mpsc;
+use process::Command;
+use process::Event;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 pub struct Executor {
     dependency_graph: Graph,
-    tx: process::mpsc::Sender<ProcessCommandMessage>,
-    rx: process::mpsc::Receiver<ProcessStatusMessage>,
+    tx: process::mpsc::Sender<Command>,
+    rx: process::mpsc::Receiver<Event>,
     running: HashSet<NodeHandle>,
-    shutdown: bool,
 }
 
 impl Executor {
     pub fn from_config(
         cfg: &config::System,
-        tx: process::mpsc::Sender<ProcessCommandMessage>,
-        rx: process::mpsc::Receiver<ProcessStatusMessage>,
+        tx: process::mpsc::Sender<Command>,
+        rx: process::mpsc::Receiver<Event>,
     ) -> Result<Executor> {
         let graph = Graph::from_config(&cfg)?;
 
@@ -41,60 +36,50 @@ impl Executor {
             tx,
             rx,
             running: HashSet::new(),
-            shutdown: false,
         })
     }
 
     pub async fn run(&mut self) -> Result<()> {
-        self.start().await;
+        self.init().await?;
 
-        while !self.shutdown {
-            tokio::select! {
-                _ = tokio_utils::wait_for_signal(tokio_utils::SignalKind::interrupt()) => {
-                    self.shutdown = true;
-                },
-                _ = tokio_utils::wait_for_signal(tokio_utils::SignalKind::terminate()) => {
-                    self.shutdown = true;
-                }
-                msg = self.rx.recv() => {
-                    match msg {
-                        None => {
-                            self.shutdown = true;
-                        }
-                        Some(msg) => {
-                            self.shutdown = !self.process(msg).await
-                        }
-                    }
-                }
-            };
+        while let Some(event) = self.rx.recv().await {
+            self.process(event).await;
         }
+
+        self.shutdown().await?;
         Ok(())
     }
 
-    async fn process(&mut self, msg: ProcessStatusMessage) -> bool {
-        log::debug!("processing msg");
+    async fn process(&mut self, event: Event) -> bool {
+        log::debug!("processing event");
 
-        match msg {
-            ProcessStatusMessage::Started(h) => {
+        match event {
+            Event::Started(h) => {
                 self.on_started(h).await;
                 true
             }
-            ProcessStatusMessage::Stopped(h) => {
+            Event::Stopped(h) => {
                 self.on_stopped(h).await;
                 true
             }
-            ProcessStatusMessage::AllStopped => false,
-            ProcessStatusMessage::Err(e) => {
+            Event::AllStopped => false,
+            Event::Shutdown => false,
+            Event::Err(e) => {
                 log::error!("{}", e);
                 false
             }
         }
     }
 
-    async fn start(&mut self) {
+    async fn init(&mut self) -> Result<()> {
         for h in self.dependency_graph.roots() {
             self.send_start(h).await;
         }
+        Ok(())
+    }
+
+    async fn shutdown(&mut self) -> Result<()> {
+        Ok(())
     }
 
     async fn on_started(&mut self, handle: NodeHandle) {
@@ -109,27 +94,26 @@ impl Executor {
     }
 
     async fn on_stopped(&mut self, handle: NodeHandle) {
-        let p = self.dependency_graph.node(handle);
-        self.shutdown = p.critical;
+        self.running.remove(&handle);
     }
 
     async fn send_start(&self, handle: NodeHandle) {
         let p = self.dependency_graph.node(handle).clone();
 
         log::info!("starting program {}", p.name);
-        let msg = ProcessCommandMessage::Start((handle, p));
+        let cmd = Command::Start((handle, p));
 
-        Self::send_tx(self.tx.clone(), msg).await;
+        Self::send_tx(self.tx.clone(), cmd).await;
     }
 
     async fn stop(&self) {}
 
-    async fn send(&mut self, msg: ProcessCommandMessage) {
-        self.tx.send(msg).await.expect("channel error");
+    async fn send(&self, cmd: Command) {
+        Self::send_tx(self.tx.clone(), cmd);
     }
 
-    async fn send_tx(mut tx: mpsc::Sender<ProcessCommandMessage>, msg: ProcessCommandMessage) {
-        tx.send(msg).await.expect("channel error");
+    async fn send_tx(mut tx: mpsc::Sender<Command>, cmd: Command) {
+        tx.send(cmd).await.expect("channel error");
     }
 }
 
@@ -137,9 +121,11 @@ impl Executor {
 mod tests {
     use super::*;
 
+    const TIMEOUT: std::time::Duration = std::time::Duration::from_millis(5);
+
     struct Fixture {
-        tx: mpsc::Sender<ProcessStatusMessage>,
-        rx: mpsc::Receiver<ProcessCommandMessage>,
+        tx: mpsc::Sender<Event>,
+        rx: mpsc::Receiver<Command>,
         exec: Executor,
     }
 
@@ -158,8 +144,39 @@ mod tests {
             })
         }
 
-        async fn recv(&mut self) -> ProcessCommandMessage {
-            self.rx.recv().await.expect("channel error")
+        async fn recv(&mut self) -> Command {
+            tokio::select! {
+                _ = tokio::time::delay_for(TIMEOUT) => {
+                    panic!("timeout");
+                },
+                x = self.rx.recv() => {
+                    match x {
+                        None => {
+                            panic!("channel error")
+                        },
+                        Some(cmd) => cmd,
+                    }
+                }
+            }
+        }
+
+        async fn expect_start(&mut self, name: &str) -> NodeHandle {
+            match self.recv().await {
+                Command::Start((h, p)) => {
+                    assert_eq!(name, p.name);
+                    h
+                }
+                _ => panic!("unexpected message"),
+            }
+        }
+
+        async fn expect_nothing(&mut self) {
+            tokio::select! {
+                _ = tokio::time::delay_for(TIMEOUT) => (),
+                _ = self.rx.recv() => {
+                    panic!("unexpected message")
+                }
+            };
         }
     }
 
@@ -172,15 +189,9 @@ mod tests {
         "#;
 
         let mut fixture = Fixture::new(toml).unwrap();
-        fixture.exec.start().await;
+        fixture.exec.init().await.unwrap();
 
-        match fixture.recv().await {
-            ProcessCommandMessage::Start((_, p)) => {
-                assert_eq!(p.name, "single");
-            }
-            _ => {
-                panic!("unexpected message");
-            }
-        }
+        fixture.expect_start("single").await;
+        fixture.expect_nothing().await;
     }
 }

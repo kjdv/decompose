@@ -100,7 +100,7 @@ async fn run(
     let mut process_manager = process::ProcessManager::new(cmd_rx, status_tx, &sys, of);
     let mut exec = executor::Executor::from_config(&sys, cmd_tx, status_rx)?;
 
-    tokio::join!(process_manager.run(), exec.run(),);
+    tokio::join!(process_manager.run(), exec.run());
     log::debug!("done");
     Ok(())
 }
