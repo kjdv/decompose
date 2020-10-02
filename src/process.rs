@@ -362,6 +362,16 @@ fn is_alive(pid: u32) -> bool {
     }
 }
 
+fn exit_status(pid: u32) -> Option<i32> {
+    use nix::sys::wait;
+
+    let pid = nix::unistd::Pid::from_raw(pid as i32);
+    match wait::waitpid(pid, None) {
+        Ok(wait::WaitStatus::Exited(_, code)) => Some(code),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -385,6 +395,41 @@ mod tests {
         stop_program(proc, timeout).await;
 
         assert!(!is_alive(pid));
+    }
+
+    #[tokio::test]
+    async fn exit_status_good() {
+        let proc = Process::new_with_name(
+            process::Command::new("/bin/ls")
+                .kill_on_drop(true)
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+                .expect("ls"),
+            "ls".to_string(),
+            false,
+        );
+        let pid = proc.info.pid;
+
+        assert_eq!(0, exit_status(pid).unwrap());
+    }
+
+    #[tokio::test]
+    async fn exit_status_bad() {
+        let proc = Process::new_with_name(
+            process::Command::new("/bin/ls")
+                .arg("path_does_not_exists")
+                .kill_on_drop(true)
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+                .expect("ls"),
+            "ls".to_string(),
+            false,
+        );
+        let pid = proc.info.pid;
+
+        assert_ne!(0, exit_status(pid).unwrap());
     }
 
     #[tokio::test]
