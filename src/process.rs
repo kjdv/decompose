@@ -20,7 +20,6 @@ pub enum Command {
 pub enum Event {
     Started(NodeHandle),
     Stopped(NodeHandle),
-    AllStopped,
     Shutdown,
     Err(tokio::io::Error),
 }
@@ -53,41 +52,46 @@ impl ProcessManager {
 
     pub async fn run(&mut self) {
         loop {
-            tokio::select! {
+            let c = tokio::select! {
                 _ = tokio_utils::wait_for_signal(tokio_utils::SignalKind::child()) => {
                     log::debug!("received SIGCHILD");
                     self.check_alive().await;
+                    true
                 },
                 _ = tokio_utils::wait_for_signal(tokio_utils::SignalKind::interrupt()) => {
                     log::debug!("received SIGINT");
-                    self.send(Event::Shutdown);
+                    self.send(Event::Shutdown).await;
+                    true
                 },
                 _ = tokio_utils::wait_for_signal(tokio_utils::SignalKind::terminate()) => {
                     log::debug!("received SIGTERM");
-                    self.send(Event::Shutdown);
+                    self.send(Event::Shutdown).await;
+                    true
                 },
                 msg = self.rx.recv() => {
                     match msg {
                         Some(Command::Start((h, p))) => {
                             log::debug!("got start signal for {}", p.name);
                             self.start(h, p).await;
+                            true
                         }
                         Some(Command::Stop(h)) => {
                             if let Some(p) = self.procs.get(&h) {
                                 log::debug!("got stop signal for {}", p.info)
                             } else {
-                                log::warn!("no process stacked for handle")
+                                log::warn!("no process tracked for handle")
                             }
+                            true
                         },
                         None => {
                             log::debug!("channel closed");
+                            false
                         }
                     }
                 }
-            }
+            };
 
-            if self.procs.is_empty() {
-                self.send(Event::AllStopped).await;
+            if !c {
                 break;
             }
         }

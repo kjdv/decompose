@@ -43,32 +43,34 @@ impl Executor {
         self.init().await?;
 
         while let Some(event) = self.rx.recv().await {
-            self.process(event).await;
+            if !self.process(event).await? {
+                break;
+            }
         }
 
         self.shutdown().await?;
         Ok(())
     }
 
-    async fn process(&mut self, event: Event) -> bool {
+    async fn process(&mut self, event: Event) -> Result<bool> {
         log::debug!("processing event");
 
         match event {
             Event::Started(h) => {
                 self.on_started(h).await;
-                true
+                Ok(true)
             }
-            Event::Stopped(h) => {
-                self.on_stopped(h).await;
-                true
-            }
-            Event::AllStopped => false,
-            Event::Shutdown => false,
+            Event::Stopped(h) => Ok(self.on_stopped(h).await),
+            Event::Shutdown => Ok(false),
             Event::Err(e) => {
                 log::error!("{}", e);
-                false
+                Err(e.into())
             }
         }
+    }
+
+    fn is_alive(&self) -> bool {
+        !self.running.is_empty()
     }
 
     async fn init(&mut self) -> Result<()> {
@@ -93,8 +95,13 @@ impl Executor {
         }
     }
 
-    async fn on_stopped(&mut self, handle: NodeHandle) {
-        self.running.remove(&handle);
+    async fn on_stopped(&mut self, handle: NodeHandle) -> bool {
+        if let Some(h) = self.running.take(&handle) {
+            let p = self.dependency_graph.node(handle);
+            !p.critical
+        } else {
+            true
+        }
     }
 
     async fn send_start(&self, handle: NodeHandle) {
@@ -124,7 +131,6 @@ mod tests {
     const TIMEOUT: std::time::Duration = std::time::Duration::from_millis(5);
 
     struct Fixture {
-        tx: mpsc::Sender<Event>,
         rx: mpsc::Receiver<Command>,
         exec: Executor,
     }
@@ -133,15 +139,11 @@ mod tests {
         fn new(toml: &str) -> Result<Fixture> {
             let cfg = config::System::from_toml(toml)?;
 
-            let (statux_tx, status_rx) = mpsc::channel(10);
+            let (_, status_rx) = mpsc::channel(10);
             let (cmd_tx, cmd_rx) = mpsc::channel(10);
 
             let exec = Executor::from_config(&cfg, cmd_tx, status_rx)?;
-            Ok(Fixture {
-                tx: statux_tx,
-                rx: cmd_rx,
-                exec,
-            })
+            Ok(Fixture { rx: cmd_rx, exec })
         }
 
         async fn recv(&mut self) -> Command {
@@ -193,5 +195,113 @@ mod tests {
 
         fixture.expect_start("single").await;
         fixture.expect_nothing().await;
+    }
+
+    #[tokio::test]
+    async fn depencencies_are_unlocked_on_started() {
+        let toml = r#"
+        [[program]]
+        name = "a"
+        exec = "e"
+
+        [[program]]
+        name = "b"
+        exec = "e"
+
+        [[program]]
+        name = "c"
+        exec = "e"
+        depends = ["a", "b"]
+        "#;
+
+        let mut fixture = Fixture::new(toml).unwrap();
+        fixture.exec.init().await.unwrap();
+
+        let a = fixture.expect_start("a").await;
+        let b = fixture.expect_start("b").await;
+        fixture.expect_nothing().await;
+
+        fixture.exec.process(Event::Started(a)).await.unwrap();
+        fixture.expect_nothing().await;
+
+        fixture.exec.process(Event::Started(b)).await.unwrap();
+        fixture.expect_start("c").await;
+        fixture.expect_nothing().await;
+    }
+
+    #[tokio::test]
+    async fn error_stops_process() {
+        let toml = r#"
+        [[program]]
+        name = "single"
+        exec = "e"
+        "#;
+
+        let mut fixture = Fixture::new(toml).unwrap();
+        fixture
+            .exec
+            .process(Event::Err(tokio_utils::make_err("bad")))
+            .await
+            .expect_err("expect err");
+    }
+
+    #[tokio::test]
+    async fn alive_is_false_if_everything_is_stopped() {
+        let toml = r#"
+        [[program]]
+        name = "a"
+        exec = "e"
+
+        [[program]]
+        name = "b"
+        exec = "e"
+        "#;
+
+        let mut fixture = Fixture::new(toml).unwrap();
+        assert!(!fixture.exec.is_alive());
+
+        fixture.exec.init().await.unwrap();
+        let a = fixture.expect_start("a").await;
+        let b = fixture.expect_start("b").await;
+        fixture.exec.process(Event::Started(a)).await.unwrap();
+        fixture.exec.process(Event::Started(b)).await.unwrap();
+        assert!(fixture.exec.is_alive());
+
+        fixture.exec.process(Event::Stopped(a)).await.unwrap();
+        assert!(fixture.exec.is_alive());
+
+        fixture.exec.process(Event::Stopped(b)).await.unwrap();
+        assert!(!fixture.exec.is_alive());
+    }
+
+    #[tokio::test]
+    async fn stopping_critical_process_breaks_run() {
+        let toml = r#"
+        [[program]]
+        name = "a"
+        exec = "e"
+
+        [[program]]
+        name = "b"
+        exec = "e"
+        critical = false
+
+        [[program]]
+        name = "c"
+        exec = "e"
+        critical = true
+        "#;
+
+        let mut fixture = Fixture::new(toml).unwrap();
+        fixture.exec.init().await.unwrap();
+        let a = fixture.expect_start("a").await;
+        let b = fixture.expect_start("b").await;
+        let c = fixture.expect_start("c").await;
+        fixture.exec.process(Event::Started(a)).await.unwrap();
+        fixture.exec.process(Event::Started(b)).await.unwrap();
+        fixture.exec.process(Event::Started(c)).await.unwrap();
+
+        assert!(fixture.exec.process(Event::Stopped(b)).await.unwrap());
+        assert!(!fixture.exec.process(Event::Stopped(c)).await.unwrap());
     }
 }
