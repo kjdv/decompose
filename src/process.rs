@@ -109,8 +109,16 @@ impl ProcessManager {
 
         match msg {
             Ok(p) => {
+                let already_stopped = p.proc.is_none();
+                let info = p.info.clone();
+
                 self.procs.insert(handle, p);
                 self.send(Event::Started(handle)).await;
+
+                if already_stopped {
+                    log::info!("{} stopped", info);
+                    self.send(Event::Stopped(handle)).await;
+                }
             }
             Err(e) => {
                 self.send(Event::Err(e)).await;
@@ -154,7 +162,9 @@ impl ProcessManager {
     }
 
     async fn send(&mut self, msg: Event) {
-        self.tx.send(msg).await.expect("channel error");
+        if let Err(e) = self.tx.send(msg).await {
+            log::debug!("channel error: {}", e);
+        }
     }
 }
 

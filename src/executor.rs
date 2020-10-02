@@ -64,7 +64,10 @@ impl Executor {
                 self.on_started(h).await;
                 Ok(true)
             }
-            Event::Stopped(h) => Ok(self.on_stopped(h).await),
+            Event::Stopped(h) => {
+                self.on_stopped(h).await;
+                Ok(true)
+            }
             Event::Shutdown => {
                 self.shutdown().await?;
                 Ok(true)
@@ -90,7 +93,7 @@ impl Executor {
 
     async fn shutdown(&mut self) -> Result<()> {
         self.shutting_down = true;
-        
+
         if self.is_alive() {
             for h in self.dependency_graph.leaves() {
                 self.send_stop(h).await;
@@ -110,13 +113,12 @@ impl Executor {
         }
     }
 
-    async fn on_stopped(&mut self, handle: NodeHandle) -> bool {
-        let r = if let Some(h) = self.running.take(&handle) {
+    async fn on_stopped(&mut self, handle: NodeHandle) {
+        if let Some(h) = self.running.take(&handle) {
             let p = self.dependency_graph.node(h);
-            !p.critical
-        } else {
-            true
-        };
+            log::debug!("on stopped for {} {}", p.name, p.critical);
+            let _ = self.shutdown().await;
+        }
 
         if self.shutting_down {
             for h in self
@@ -126,8 +128,6 @@ impl Executor {
                 self.send_stop(h).await;
             }
         }
-
-        r
     }
 
     async fn send_start(&self, handle: NodeHandle) {
@@ -318,7 +318,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn stopping_critical_process_breaks_run() {
+    async fn stopping_critical_process_initiates_shutdown() {
         let toml = r#"
         [[program]]
         name = "a"
@@ -345,7 +345,11 @@ mod tests {
         fixture.exec.process(Event::Started(c)).await.unwrap();
 
         assert!(fixture.exec.process(Event::Stopped(b)).await.unwrap());
-        assert!(!fixture.exec.process(Event::Stopped(c)).await.unwrap());
+        assert!(fixture.exec.process(Event::Stopped(c)).await.unwrap());
+
+        fixture.expect_stop(a).await;
+        fixture.expect_stop(b).await;
+        fixture.expect_stop(c).await;
     }
 
     #[tokio::test]
