@@ -327,9 +327,9 @@ async fn stop_program(proc: Process, timeout: Duration) {
         }
         Err(e) => {
             log::debug!("{} failed to terminate: {}", info, e);
-            log::warn!("{} killed", info);
+            log::warn!("{} killed?", info);
         }
-    };
+    }
 }
 
 async fn terminate_wait(

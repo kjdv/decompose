@@ -101,6 +101,7 @@ async fn run(
     let exec = executor::Executor::from_config(&sys, cmd_tx, status_rx)?;
 
     tokio::try_join!(process_manager.run(), exec.run())?;
+
     log::debug!("done");
     Ok(())
 }

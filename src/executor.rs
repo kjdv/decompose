@@ -124,7 +124,8 @@ impl Executor {
         if let Some(h) = self.running.take(&handle) {
             let p = self.dependency_graph.node(h);
             log::debug!("on stopped for {} {}", p.name, p.critical);
-            if p.critical {
+            if p.critical && !p.disabled {
+                log::info!("critical task {} stopped", p.name);
                 let _ = self.shutdown().await;
             }
         }
@@ -143,9 +144,7 @@ impl Executor {
         let p = self.dependency_graph.node(handle).clone();
 
         log::info!("starting program {}", p.name);
-
         let cmd = Command::Start((handle, p));
-
         self.send(cmd).await;
     }
 

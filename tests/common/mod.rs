@@ -184,7 +184,7 @@ impl Fixture {
     }
 
     pub fn expect_program_disabled(&mut self) -> ProgramInfo {
-        let caps = self.expect_line(r"\[decompose::executor\] ([a-zA-Z][a-zA-Z0-9]+) disabled");
+        let caps = self.expect_line(r"\[decompose::process\] ([a-zA-Z][a-zA-Z0-9]+) disabled");
         ProgramInfo {
             name: caps.get(1).unwrap().to_string(),
             pid: 0,
