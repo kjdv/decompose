@@ -115,10 +115,9 @@ impl Executor {
         self.pending.remove(&handle);
         self.running.insert(handle);
 
-        for h in self
-            .dependency_graph
-            .expand(handle, |n| self.running.contains(&n))
-        {
+        for h in self.dependency_graph.expand(handle, |n| {
+            self.running.contains(&n) || !self.pending.contains(&n)
+        }) {
             self.send_start(h).await;
         }
     }
@@ -459,5 +458,36 @@ mod tests {
 
         assert!(fixture.exec.is_alive());
         fixture.expect_start("b").await;
+    }
+
+    #[tokio::test]
+    async fn dependency_complete_before_start() {
+        let toml = r#"
+        [[program]]
+        name = "a"
+        exec = "e"
+        ready = {completed={}}
+
+        [[program]]
+        name = "b"
+        exec = "e"
+
+        [[program]]
+        name = "c"
+        exec = "e"
+        depends = ["a", "b"]
+        "#;
+
+        let mut fixture = Fixture::new(toml).unwrap();
+        fixture.exec.init().await.unwrap();
+
+        let a = fixture.expect_start("a").await;
+        let b = fixture.expect_start("b").await;
+        fixture.exec.process(Event::Started(a)).await.unwrap();
+        fixture.exec.process(Event::Stopped(a, None)).await.unwrap();
+        fixture.expect_nothing().await;
+
+        fixture.exec.process(Event::Started(b)).await.unwrap();
+        fixture.expect_start("c").await;
     }
 }

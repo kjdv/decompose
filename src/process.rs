@@ -169,9 +169,9 @@ async fn run_program(
     )
     .await
     {
-        tx.send(Event::Err(e))
-            .await
-            .expect_err("event channel error");
+        if let Err(e) = tx.send(Event::Err(e)).await {
+            log::warn!("{}", e);
+        }
     }
 }
 
