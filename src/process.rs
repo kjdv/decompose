@@ -5,6 +5,7 @@ use super::graph::NodeHandle;
 use super::output;
 use super::readysignals;
 use super::tokio_utils;
+pub use std::process::ExitStatus;
 use std::time::Duration;
 use tokio::process;
 use tokio::sync::broadcast;
@@ -19,7 +20,7 @@ pub enum Command {
 #[derive(Debug)]
 pub enum Event {
     Started(NodeHandle),
-    Stopped(NodeHandle),
+    Stopped(NodeHandle, Option<ExitStatus>),
     Shutdown,
     Err(tokio::io::Error),
 }
@@ -196,7 +197,7 @@ async fn do_run_program(
             .await
             .map_err(tokio_utils::make_err)?;
         event_tx
-            .send(Event::Stopped(handle))
+            .send(Event::Stopped(handle, None))
             .await
             .map_err(tokio_utils::make_err)?;
 
@@ -226,7 +227,8 @@ async fn do_run_program(
 
     if let ReadySignal::Completed = prog.ready {
         // special case
-        if with_timeout(readysignals::completed(proc), start_timeout).await? {
+        let status = with_timeout(readysignals::completed(proc), start_timeout).await?;
+        if status.success() {
             log::info!("{} ready", info);
             event_tx
                 .send(Event::Started(handle))
@@ -234,7 +236,7 @@ async fn do_run_program(
                 .map_err(tokio_utils::make_err)?;
             log::info!("{} stopped", info);
             event_tx
-                .send(Event::Stopped(handle))
+                .send(Event::Stopped(handle, Some(status)))
                 .await
                 .map_err(tokio_utils::make_err)?;
             return Ok(());
@@ -306,7 +308,7 @@ async fn do_run_program(
     log::info!("{} stopped, {}", info, output.status);
 
     event_tx
-        .send(Event::Stopped(handle))
+        .send(Event::Stopped(handle, Some(output.status)))
         .await
         .expect("event channel error");
 

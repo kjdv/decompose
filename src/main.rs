@@ -85,25 +85,34 @@ files => log files for each process will be places in --outdir",
         args.value_of("outdir").expect("outdir"),
     )?;
 
-    tokio_utils::run(run(sys, of))?;
+    let status = tokio_utils::run(run(sys, of))?;
 
-    Ok(())
+    match status {
+        None => Ok(()),
+        Some(status) => {
+            if status.success() {
+                Ok(())
+            } else {
+                Err(string_error::into_err(format!("{}", status)))
+            }
+        }
+    }
 }
 
 async fn run(
     sys: config::System,
     of: Box<dyn output::OutputFactory>,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<Option<process::ExitStatus>, Box<dyn Error>> {
     let (cmd_tx, cmd_rx) = process::mpsc::channel(10);
     let (status_tx, status_rx) = process::mpsc::channel(10);
 
     let process_manager = process::ProcessManager::new(cmd_rx, status_tx, &sys, of);
     let exec = executor::Executor::from_config(&sys, cmd_tx, status_rx)?;
 
-    tokio::try_join!(process_manager.run(), exec.run())?;
+    let (_, status) = tokio::try_join!(process_manager.run(), exec.run())?;
 
     log::debug!("done");
-    Ok(())
+    Ok(status)
 }
 
 fn default_outdir() -> String {

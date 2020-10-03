@@ -120,12 +120,16 @@ impl Fixture {
         }
     }
 
-    pub fn stop(&mut self) {
+    pub fn stop(&mut self) -> Option<std::process::ExitStatus> {
         if let Some(mut proc) = self.process.take() {
             if !terminate(&mut proc, 0.1) {
                 proc.kill().unwrap();
                 proc.wait().unwrap();
             }
+
+            proc.wait_with_output().map(|o| o.status).ok()
+        } else {
+            None
         }
     }
 

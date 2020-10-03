@@ -51,10 +51,10 @@ async fn host_and_port(host: &str, port: u16) -> Result {
     }
 }
 
-pub async fn completed(proc: tokio::process::Child) -> Result {
-    proc.wait_with_output()
-        .await
-        .map(|output| output.status.success())
+pub async fn completed(
+    proc: tokio::process::Child,
+) -> std::result::Result<std::process::ExitStatus, tokio::io::Error> {
+    proc.wait_with_output().await.map(|o| o.status)
 }
 
 pub async fn output(mut rx: Receiver, re: &str) -> Result {
@@ -146,7 +146,7 @@ mod tests {
             .expect("/bin/ls");
 
         let result = completed(proc).await.expect("completed");
-        assert!(result);
+        assert!(result.success());
     }
 
     #[tokio::test]
@@ -159,6 +159,6 @@ mod tests {
             .expect("/bin/ls");
 
         let result = completed(proc).await.expect("completed");
-        assert!(!result);
+        assert!(!result.success());
     }
 }

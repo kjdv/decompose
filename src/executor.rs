@@ -20,6 +20,7 @@ pub struct Executor {
     running: HashSet<NodeHandle>,
     pending: HashSet<NodeHandle>,
     shutting_down: bool,
+    status: Option<process::ExitStatus>,
 }
 
 impl Executor {
@@ -37,10 +38,11 @@ impl Executor {
             running: HashSet::new(),
             pending: HashSet::new(),
             shutting_down: false,
+            status: None,
         })
     }
 
-    pub async fn run(mut self) -> Result<()> {
+    pub async fn run(mut self) -> Result<Option<process::ExitStatus>> {
         log::info!("starting execution");
 
         self.init().await?;
@@ -55,7 +57,7 @@ impl Executor {
         self.shutdown().await?;
 
         log::info!("stopping execution");
-        Ok(())
+        Ok(self.status)
     }
 
     async fn process(&mut self, event: Event) -> Result<bool> {
@@ -66,8 +68,8 @@ impl Executor {
                 self.on_started(h).await;
                 Ok(true)
             }
-            Event::Stopped(h) => {
-                self.on_stopped(h).await;
+            Event::Stopped(h, s) => {
+                self.on_stopped(h, s).await;
                 Ok(true)
             }
             Event::Shutdown => {
@@ -88,6 +90,7 @@ impl Executor {
 
     async fn init(&mut self) -> Result<()> {
         self.pending = self.dependency_graph.all().collect();
+        self.status = None;
 
         for h in self.dependency_graph.roots() {
             self.send_start(h).await;
@@ -120,12 +123,17 @@ impl Executor {
         }
     }
 
-    async fn on_stopped(&mut self, handle: NodeHandle) {
+    async fn on_stopped(&mut self, handle: NodeHandle, status: Option<process::ExitStatus>) {
         if let Some(h) = self.running.take(&handle) {
             let p = self.dependency_graph.node(h);
             log::debug!("on stopped for {} {}", p.name, p.critical);
             if p.critical && !p.disabled {
                 log::info!("critical task {} stopped", p.name);
+
+                if self.status.is_none() && status.is_some() {
+                    self.status = status;
+                }
+
                 let _ = self.shutdown().await;
             }
         }
@@ -319,10 +327,10 @@ mod tests {
         fixture.exec.process(Event::Started(b)).await.unwrap();
         assert!(fixture.exec.is_alive());
 
-        fixture.exec.process(Event::Stopped(a)).await.unwrap();
+        fixture.exec.process(Event::Stopped(a, None)).await.unwrap();
         assert!(fixture.exec.is_alive());
 
-        fixture.exec.process(Event::Stopped(b)).await.unwrap();
+        fixture.exec.process(Event::Stopped(b, None)).await.unwrap();
         assert!(!fixture.exec.is_alive());
     }
 
@@ -353,8 +361,8 @@ mod tests {
         fixture.exec.process(Event::Started(b)).await.unwrap();
         fixture.exec.process(Event::Started(c)).await.unwrap();
 
-        assert!(fixture.exec.process(Event::Stopped(b)).await.unwrap());
-        assert!(fixture.exec.process(Event::Stopped(c)).await.unwrap());
+        assert!(fixture.exec.process(Event::Stopped(b, None)).await.unwrap());
+        assert!(fixture.exec.process(Event::Stopped(c, None)).await.unwrap());
 
         fixture.expect_stop(a).await;
         fixture.expect_stop(b).await;
@@ -378,7 +386,7 @@ mod tests {
         let a = fixture.expect_start("a").await;
         fixture.expect_start("b").await;
 
-        fixture.exec.process(Event::Stopped(a)).await.unwrap();
+        fixture.exec.process(Event::Stopped(a, None)).await.unwrap();
         fixture.expect_nothing().await;
     }
 
@@ -405,7 +413,7 @@ mod tests {
         fixture.expect_stop(b).await;
         fixture.expect_nothing().await;
 
-        fixture.exec.process(Event::Stopped(b)).await.unwrap();
+        fixture.exec.process(Event::Stopped(b, None)).await.unwrap();
         fixture.expect_stop(a).await;
     }
 
@@ -421,7 +429,7 @@ mod tests {
         fixture.exec.init().await.unwrap();
         let a = fixture.expect_start("a").await;
         fixture.exec.process(Event::Started(a)).await.unwrap();
-        fixture.exec.process(Event::Stopped(a)).await.unwrap();
+        fixture.exec.process(Event::Stopped(a, None)).await.unwrap();
 
         assert!(!fixture.exec.is_alive());
 
@@ -447,7 +455,7 @@ mod tests {
 
         let a = fixture.expect_start("a").await;
         fixture.exec.process(Event::Started(a)).await.unwrap();
-        fixture.exec.process(Event::Stopped(a)).await.unwrap();
+        fixture.exec.process(Event::Stopped(a, None)).await.unwrap();
 
         assert!(fixture.exec.is_alive());
         fixture.expect_start("b").await;
