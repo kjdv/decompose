@@ -197,12 +197,15 @@ impl Fixture {
     }
 
     pub fn expect_program_terminates(&mut self, prog: &ProgramInfo) {
-        let re = format!("\\[decompose::process\\] {} terminated", *prog);
+        let re = format!("\\[decompose::process\\] {} stopped", *prog);
         self.expect_line(re.as_str());
     }
 
     pub fn expect_program_is_killed(&mut self, prog: &ProgramInfo) {
-        let re = format!("\\[decompose::process\\] {} killed", *prog);
+        let re = format!(
+            "\\[decompose::process\\] {} failed to terminate, killing",
+            *prog
+        );
         self.expect_line(re.as_str());
     }
 

@@ -191,6 +191,15 @@ async fn do_run_program(
 
     if prog.disabled {
         log::info!("{} disabled, not starting", prog.name);
+        event_tx
+            .send(Event::Started(handle))
+            .await
+            .map_err(tokio_utils::make_err)?;
+        event_tx
+            .send(Event::Stopped(handle))
+            .await
+            .map_err(tokio_utils::make_err)?;
+
         return Ok(());
     }
 
@@ -294,7 +303,7 @@ async fn do_run_program(
     log::debug!("{} waiting for completion or stop signal", info);
 
     let output = proc.wait_with_output().await?;
-    log::info!("{} stopped, status={}", info, output.status);
+    log::info!("{} stopped, {}", info, output.status);
 
     event_tx
         .send(Event::Stopped(handle))
