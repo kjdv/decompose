@@ -5,9 +5,9 @@ use super::graph::NodeHandle;
 use super::output;
 use super::readysignals;
 use super::tokio_utils;
-use std::collections::HashMap;
 use std::time::Duration;
 use tokio::process;
+use tokio::sync::broadcast;
 pub use tokio::sync::mpsc;
 
 #[derive(Debug, Clone)]
@@ -27,10 +27,10 @@ pub enum Event {
 pub struct ProcessManager {
     rx: mpsc::Receiver<Command>,
     tx: mpsc::Sender<Event>,
+    stop_tx: broadcast::Sender<NodeHandle>,
     output_factory: Box<dyn output::OutputFactory>,
     start_timeout: Option<Duration>,
     terminate_timeout: Duration,
-    procs: HashMap<NodeHandle, Process>,
 }
 
 impl ProcessManager {
@@ -40,24 +40,20 @@ impl ProcessManager {
         sys: &config::System,
         output_factory: Box<dyn output::OutputFactory>,
     ) -> ProcessManager {
+        let (stop_tx, _) = broadcast::channel(10);
         ProcessManager {
             rx,
             tx,
+            stop_tx,
             output_factory,
             start_timeout: sys.start_timeout.map(Duration::from_secs_f64),
             terminate_timeout: Duration::from_secs_f64(sys.terminate_timeout),
-            procs: HashMap::new(),
         }
     }
 
     pub async fn run(mut self) -> std::result::Result<(), Box<dyn std::error::Error>> {
         loop {
             let c = tokio::select! {
-                _ = tokio_utils::wait_for_signal(tokio_utils::SignalKind::child()) => {
-                    log::debug!("received SIGCHILD");
-                    self.check_alive().await;
-                    true
-                },
                 _ = tokio_utils::wait_for_signal(tokio_utils::SignalKind::interrupt()) => {
                     log::debug!("received SIGINT");
                     self.send(Event::Shutdown).await;
@@ -102,62 +98,21 @@ impl ProcessManager {
             self.output_factory.stderr(&prog),
         );
 
-        let msg = match self.start_timeout {
-            Some(t) => tokio_utils::with_timeout(start_program(prog, stdout, stderr), t).await,
-            None => start_program(prog, stdout, stderr).await,
-        };
-
-        match msg {
-            Ok(p) => {
-                let already_stopped = p.proc.is_none();
-                let info = p.info.clone();
-
-                self.procs.insert(handle, p);
-                self.send(Event::Started(handle)).await;
-
-                if already_stopped {
-                    log::info!("{} stopped", info);
-                    self.send(Event::Stopped(handle)).await;
-                }
-            }
-            Err(e) => {
-                self.send(Event::Err(e)).await;
-            }
-        }
+        tokio::spawn(run_program(
+            handle,
+            prog,
+            stdout,
+            stderr,
+            self.tx.clone(),
+            self.stop_tx.subscribe(),
+            self.start_timeout,
+            self.terminate_timeout,
+        ));
     }
 
     async fn stop(&mut self, handle: NodeHandle) {
-        match self.procs.remove(&handle) {
-            None => {
-                log::warn!("attempt to stop non-tracked process");
-            }
-            Some(proc) => {
-                stop_program(proc, self.terminate_timeout).await;
-                self.send(Event::Stopped(handle)).await;
-            }
-        };
-    }
-
-    async fn check_alive(&mut self) {
-        let alive = |p: &Process| {
-            if p.is_alive() {
-                log::debug!("{} still alive", p);
-                true
-            } else {
-                log::info!("{} stopped", p);
-                false
-            }
-        };
-
-        let stopped: std::collections::HashSet<NodeHandle> = self
-            .procs
-            .iter()
-            .filter(|(_, p)| !alive(p))
-            .map(|(h, _)| *h)
-            .collect();
-
-        for h in stopped.iter() {
-            self.stop(*h).await;
+        if let Err(e) = self.stop_tx.send(handle) {
+            log::warn!("failed to forward stop command: {:?}", e);
         }
     }
 
@@ -168,47 +123,10 @@ impl ProcessManager {
     }
 }
 
-#[derive(Debug)]
-struct Process {
-    proc: Option<Box<tokio::process::Child>>,
-    info: ProcessInfo,
-    critical: bool,
-}
-
 #[derive(Debug, Clone)]
 struct ProcessInfo {
     pub name: String,
     pub pid: u32,
-}
-
-impl Process {
-    fn new(proc: Option<tokio::process::Child>, info: ProcessInfo, critical: bool) -> Process {
-        Process {
-            proc: proc.map(Box::new),
-            info,
-            critical,
-        }
-    }
-
-    #[allow(dead_code)]
-    fn new_with_name(proc: tokio::process::Child, name: String, critical: bool) -> Process {
-        let pid = proc.id();
-        Process {
-            proc: Some(Box::new(proc)),
-            info: ProcessInfo { name, pid },
-            critical,
-        }
-    }
-
-    fn is_alive(&self) -> bool {
-        is_alive(self.info.pid)
-    }
-}
-
-impl std::fmt::Display for Process {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        self.info.fmt(f)
-    }
 }
 
 impl std::fmt::Display for ProcessInfo {
@@ -217,71 +135,196 @@ impl std::fmt::Display for ProcessInfo {
     }
 }
 
-async fn start_program(
+async fn with_timeout<R>(
+    f: impl futures::future::Future<Output = tokio_utils::Result<R>>,
+    timeout: Option<Duration>,
+) -> tokio_utils::Result<R> {
+    match timeout {
+        None => f.await,
+        Some(timeout) => tokio_utils::with_timeout(f, timeout).await,
+    }
+}
+
+async fn run_program(
+    handle: NodeHandle,
     prog: config::Program,
     stdout: output::Sender,
     stderr: output::Sender,
-) -> tokio_utils::Result<Process> {
+    event_tx: mpsc::Sender<Event>,
+    stop_rx: broadcast::Receiver<NodeHandle>,
+    start_timeout: Option<std::time::Duration>,
+    terminate_timeout: std::time::Duration,
+) {
+    let mut tx = event_tx.clone();
+    if let Err(e) = do_run_program(
+        handle,
+        prog,
+        stdout,
+        stderr,
+        event_tx,
+        stop_rx,
+        start_timeout,
+        terminate_timeout,
+    )
+    .await
+    {
+        tx.send(Event::Err(e))
+            .await
+            .expect_err("event channel error");
+    }
+}
+
+async fn do_run_program(
+    handle: NodeHandle,
+    prog: config::Program,
+    stdout: output::Sender,
+    stderr: output::Sender,
+    mut event_tx: mpsc::Sender<Event>,
+    stop_rx: broadcast::Receiver<NodeHandle>,
+    start_timeout: Option<std::time::Duration>,
+    terminate_timeout: std::time::Duration,
+) -> tokio_utils::Result<()> {
+    // bit of a monster function, but actually easiest to reason about to think of
+    // a straight line of progression
+
     use config::ReadySignal;
 
     if prog.disabled {
         log::info!("{} disabled, not starting", prog.name);
-        let info = ProcessInfo {
-            name: prog.name,
-            pid: 0,
-        };
-        let proc = Process::new(None, info, false);
-        return Ok(proc);
+        return Ok(());
     }
 
-    let (mut child, info) = create_child_process(&prog)?;
-
-    let monitor_out = stdout.subscribe();
-    let monitor_err = stderr.subscribe();
-
-    tokio::spawn(output::produce(stdout, child.stdout.take()));
-    tokio::spawn(output::produce(stderr, child.stderr.take()));
-
-    let mut child = Some(child);
+    log::debug!("{} creating child process", prog.name);
+    let (mut proc, info) = create_child_process(&prog)?;
 
     log::info!("{} started", info);
 
+    log::debug!("{} hooking up stop command", info);
+    tokio::spawn(wait_for_stop_command(
+        handle,
+        info.clone(),
+        terminate_timeout,
+        stop_rx,
+    ));
+
+    log::debug!("{} hooking up output pipes", info);
+    let monitor_out = stdout.subscribe();
+    let monitor_err = stderr.subscribe();
+    tokio::spawn(output::produce(stdout, proc.stdout.take()));
+    tokio::spawn(output::produce(stderr, proc.stderr.take()));
+
+    log::debug!("{} waiting for ready signal", info);
+
+    if let ReadySignal::Completed = prog.ready {
+        // special case
+        if with_timeout(readysignals::completed(proc), start_timeout).await? {
+            log::info!("{} ready", info);
+            event_tx
+                .send(Event::Started(handle))
+                .await
+                .map_err(tokio_utils::make_err)?;
+            log::info!("{} stopped", info);
+            event_tx
+                .send(Event::Stopped(handle))
+                .await
+                .map_err(tokio_utils::make_err)?;
+            return Ok(());
+        } else {
+            let msg = format!("{} not ready", info);
+            log::error!("{}", msg);
+            return Err(tokio_utils::make_err(msg));
+        }
+    }
+
     let rs = match prog.ready {
-        ReadySignal::Nothing => readysignals::nothing().await?,
-        ReadySignal::Manual => readysignals::manual(info.name.as_str()).await?,
+        ReadySignal::Nothing => with_timeout(readysignals::nothing(), start_timeout).await?,
+        ReadySignal::Manual => {
+            // not setting timeout on manual trigger
+            readysignals::manual(info.name.as_str()).await?
+        }
         ReadySignal::Timer(s) => {
             let dur = Duration::from_secs_f64(s);
-            log::debug!("waiting {}s for {}", s, info);
+            // not setting timeout on already time-based signal
             readysignals::timer(dur).await?
         }
-        ReadySignal::Port(port) => {
-            log::debug!("waiting for port {} for {}", port, info);
-            readysignals::port(port).await?
-        }
-        ReadySignal::Completed => readysignals::completed(child.take().unwrap()).await?,
-        ReadySignal::Stdout(re) => readysignals::output(monitor_out, re.as_str()).await?,
-        ReadySignal::Stderr(re) => readysignals::output(monitor_err, re.as_str()).await?,
-        ReadySignal::Healthcheck(endpoint) => {
-            readysignals::healthcheck(
-                endpoint.host.as_str(),
-                endpoint.port,
-                endpoint.path.as_str(),
+        ReadySignal::Port(port) => with_timeout(readysignals::port(port), start_timeout).await?,
+        ReadySignal::Stdout(re) => {
+            with_timeout(
+                readysignals::output(monitor_out, re.as_str()),
+                start_timeout,
             )
             .await?
         }
+        ReadySignal::Stderr(re) => {
+            with_timeout(
+                readysignals::output(monitor_err, re.as_str()),
+                start_timeout,
+            )
+            .await?
+        }
+        ReadySignal::Healthcheck(endpoint) => {
+            with_timeout(
+                readysignals::healthcheck(
+                    endpoint.host.as_str(),
+                    endpoint.port,
+                    endpoint.path.as_str(),
+                ),
+                start_timeout,
+            )
+            .await?
+        }
+        ReadySignal::Completed => panic!("not handled here"),
     };
 
     match rs {
         true => {
             log::info!("{} ready", info);
-            Ok(Process::new(child, info, prog.critical))
+            event_tx
+                .send(Event::Started(handle))
+                .await
+                .expect("event channel error");
         }
         false => {
             let msg = format!("{} not ready", info);
             log::error!("{}", msg);
-            Err(tokio_utils::make_err(msg))
+            return Err(tokio_utils::make_err(msg));
         }
     }
+
+    log::debug!("{} waiting for completion or stop signal", info);
+
+    let output = proc.wait_with_output().await?;
+    log::info!("{} stopped, status={}", info, output.status);
+
+    event_tx
+        .send(Event::Stopped(handle))
+        .await
+        .expect("event channel error");
+
+    Ok(())
+}
+
+async fn wait_for_stop_command(
+    handle: NodeHandle,
+    info: ProcessInfo,
+    timeout: std::time::Duration,
+    mut stop_rx: broadcast::Receiver<NodeHandle>,
+) -> tokio_utils::Result<()> {
+    while let Ok(h) = stop_rx.recv().await {
+        if h == handle {
+            log::debug!("{} received stop command", info);
+            terminate(info.pid)?;
+
+            tokio::time::delay_for(timeout).await;
+
+            if is_alive(info.pid) {
+                log::warn!("{} failed to terminate, killing", info);
+                kill(info.pid)?;
+            }
+            break;
+        }
+    }
+    Ok(())
 }
 
 fn create_child_process(
@@ -315,47 +358,22 @@ fn create_child_process(
     Ok((child, info))
 }
 
-async fn stop_program(proc: Process, timeout: Duration) {
-    let info = proc.info.clone();
-    match terminate_wait(proc, timeout).await {
-        Ok(Some(status)) => {
-            log::debug!("{} exit status {}", info, status);
-            log::info!("{} terminated", info);
-        }
-        Ok(None) => {
-            log::debug!("{} nothing to terminate", info);
-        }
-        Err(e) => {
-            log::debug!("{} failed to terminate: {}", info, e);
-            log::warn!("{} killed?", info);
-        }
-    }
-}
-
-async fn terminate_wait(
-    mut proc: Process,
-    timeout: Duration,
-) -> std::result::Result<Option<std::process::ExitStatus>, Box<dyn std::error::Error>> {
-    if let Some(p) = proc.proc.take() {
-        let pid = proc.info.pid;
-        terminate(pid)?;
-
-        tokio_utils::with_timeout(p.wait_with_output(), timeout)
-            .await
-            .map(|ok| Some(ok.status))
-            .map_err(|e| e.into())
-    } else {
-        Ok(None)
-    }
-}
-
-fn terminate(pid: u32) -> std::result::Result<(), Box<dyn std::error::Error>> {
+fn terminate(pid: u32) -> tokio_utils::Result<()> {
     use nix::sys::signal as nix_signal;
 
     let pid = nix::unistd::Pid::from_raw(pid as i32);
     let sig = nix_signal::Signal::SIGTERM;
 
-    nix_signal::kill(pid, sig).map_err(|e| e.into())
+    nix_signal::kill(pid, sig).map_err(tokio_utils::make_err)
+}
+
+fn kill(pid: u32) -> tokio_utils::Result<()> {
+    use nix::sys::signal as nix_signal;
+
+    let pid = nix::unistd::Pid::from_raw(pid as i32);
+    let sig = nix_signal::Signal::SIGKILL;
+
+    nix_signal::kill(pid, sig).map_err(tokio_utils::make_err)
 }
 
 fn is_alive(pid: u32) -> bool {
@@ -368,93 +386,18 @@ fn is_alive(pid: u32) -> bool {
     }
 }
 
-fn exit_status(pid: u32) -> Option<i32> {
-    use nix::sys::wait;
-
-    let pid = nix::unistd::Pid::from_raw(pid as i32);
-    match wait::waitpid(pid, None) {
-        Ok(wait::WaitStatus::Exited(_, code)) => Some(code),
-        _ => None,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    extern crate regex;
 
-    #[tokio::test]
-    async fn is_alive_and_stop() {
-        let proc = Process::new_with_name(
-            process::Command::new("/bin/cat")
-                .kill_on_drop(true)
-                .spawn()
-                .expect("cat"),
-            "cat".to_string(),
-            false,
-        );
-        let pid = proc.info.pid;
-
-        assert!(proc.is_alive());
-
-        let timeout = Duration::from_millis(1);
-        stop_program(proc, timeout).await;
-
-        assert!(!is_alive(pid));
-    }
-
-    #[tokio::test]
-    async fn exit_status_good() {
-        let proc = Process::new_with_name(
-            process::Command::new("/bin/ls")
-                .kill_on_drop(true)
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .spawn()
-                .expect("ls"),
-            "ls".to_string(),
-            false,
-        );
-        let pid = proc.info.pid;
-
-        assert_eq!(0, exit_status(pid).unwrap());
-    }
-
-    #[tokio::test]
-    async fn exit_status_bad() {
-        let proc = Process::new_with_name(
-            process::Command::new("/bin/ls")
-                .arg("path_does_not_exists")
-                .kill_on_drop(true)
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .spawn()
-                .expect("ls"),
-            "ls".to_string(),
-            false,
-        );
-        let pid = proc.info.pid;
-
-        assert_ne!(0, exit_status(pid).unwrap());
-    }
-
-    #[tokio::test]
-    async fn format_process() {
-        let re = regex::Regex::new("catname:[0-9]+").expect("re");
-
-        let proc = Process::new_with_name(
-            process::Command::new("/bin/cat")
-                .kill_on_drop(true)
-                .spawn()
-                .expect("cat"),
-            "catname".to_string(),
-            false,
-        );
-
-        let fmt = format!("{}", proc.info);
-        assert!(re.is_match(fmt.as_str()));
+    #[test]
+    fn format_process() {
+        let proc = ProcessInfo {
+            name: "catname".to_string(),
+            pid: 123,
+        };
 
         let fmt = format!("{}", proc);
-        assert!(re.is_match(fmt.as_str()));
+        assert_eq!("catname:123", fmt.as_str());
     }
 }
