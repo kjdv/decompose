@@ -235,6 +235,7 @@ async fn do_run_program(
                 .await
                 .map_err(tokio_utils::make_err)?;
             log::info!("{} stopped", info);
+
             event_tx
                 .send(Event::Stopped(handle, Some(status)))
                 .await
@@ -321,7 +322,11 @@ async fn wait_for_stop_command(
     timeout: std::time::Duration,
     mut stop_rx: broadcast::Receiver<NodeHandle>,
 ) -> tokio_utils::Result<()> {
-    while let Ok(h) = stop_rx.recv().await {
+    while let Ok(h) = stop_rx
+        .recv()
+        .await
+        .map_err(|e| log::warn!("{}, some programs might fail to terminate", e))
+    {
         if h == handle {
             log::debug!("{} received stop command", info);
             terminate(info.pid)?;
