@@ -20,7 +20,7 @@ pub struct Executor {
     running: HashSet<NodeHandle>,
     pending: HashSet<NodeHandle>,
     shutting_down: bool,
-    status: Option<process::ExitStatus>,
+    status: Option<(String, process::ExitStatus)>,
 }
 
 impl Executor {
@@ -42,7 +42,7 @@ impl Executor {
         })
     }
 
-    pub async fn run(mut self) -> Result<Option<process::ExitStatus>> {
+    pub async fn run(mut self) -> Result<()> {
         log::info!("starting execution");
 
         self.init().await?;
@@ -57,7 +57,16 @@ impl Executor {
         self.shutdown().await?;
 
         log::info!("stopping execution");
-        Ok(self.status)
+        match self.status {
+            None => Ok(()),
+            Some((name, status)) => {
+                if status.success() {
+                    Ok(())
+                } else {
+                    Err(Box::new(ExitStatusError { name, status }))
+                }
+            }
+        }
     }
 
     async fn process(&mut self, event: Event) -> Result<bool> {
@@ -130,7 +139,7 @@ impl Executor {
                 log::info!("critical task {} stopped", p.name);
 
                 if self.status.is_none() && status.is_some() {
-                    self.status = status;
+                    self.status = Some((p.name.clone(), status.unwrap()));
                 }
 
                 let _ = self.shutdown().await;
@@ -172,6 +181,21 @@ impl Executor {
         tx.send(cmd).await.expect("channel error");
     }
 }
+
+#[derive(Debug)]
+struct ExitStatusError {
+    name: String,
+    status: process::ExitStatus,
+}
+
+impl std::fmt::Display for ExitStatusError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        assert!(!self.status.success());
+        write!(f, "{} failed: {}", self.name, self.status)
+    }
+}
+
+impl std::error::Error for ExitStatusError {}
 
 #[cfg(test)]
 mod tests {
