@@ -1,6 +1,7 @@
 extern crate futures;
 extern crate tokio;
 
+pub use tokio::signal::unix::SignalKind;
 pub type Result<T> = std::result::Result<T, tokio::io::Error>;
 
 pub fn run<F: futures::future::Future>(f: F) -> F::Output {
@@ -34,6 +35,15 @@ pub async fn with_timeout<R>(
             Err(make_err("timeout"))
         }
     }
+}
+
+pub async fn wait_for_signal(kind: SignalKind) -> Result<()> {
+    use tokio::signal::unix::signal;
+
+    let mut sig = signal(kind)?;
+    sig.recv().await;
+    log::info!("received signal {:?}", kind);
+    Ok(())
 }
 
 #[cfg(test)]

@@ -19,7 +19,7 @@ pub trait OutputFactory {
 }
 
 fn make_channel() -> (Sender, Receiver) {
-    broadcast::channel(16)
+    broadcast::channel(100)
 }
 
 pub async fn consume<W, F>(mut rx: Receiver, mut writer: W, formatter: F)
@@ -30,7 +30,7 @@ where
     use tokio::io::AsyncWriteExt;
 
     while let Ok(line) = rx.recv().await.map_err(|e| {
-        log::debug!("{}", e);
+        log::warn!("{}, some output might be missing", e);
         e
     }) {
         let line = formatter(line);

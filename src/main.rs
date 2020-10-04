@@ -8,13 +8,15 @@ mod config;
 mod executor;
 mod graph;
 mod output;
+mod process;
 mod readysignals;
 mod tokio_utils;
 
 fn main() -> Result<(), Box<dyn Error>> {
     do_main().map_err(|e| {
         log::error!("{:?}", e);
-        e
+        eprintln!("{}", e);
+        std::process::exit(1);
     })
 }
 
@@ -84,12 +86,23 @@ files => log files for each process will be places in --outdir",
         args.value_of("outdir").expect("outdir"),
     )?;
 
-    tokio_utils::run(async move {
-        let mut exec = executor::Executor::from_config(&sys)?;
-        exec.start(of).await?;
-        exec.run().await
-    })?;
+    tokio_utils::run(run(sys, of))?;
+    Ok(())
+}
 
+async fn run(
+    sys: config::System,
+    of: Box<dyn output::OutputFactory>,
+) -> Result<(), Box<dyn Error>> {
+    let (cmd_tx, cmd_rx) = process::mpsc::channel(10);
+    let (status_tx, status_rx) = process::mpsc::channel(10);
+
+    let process_manager = process::ProcessManager::new(cmd_rx, status_tx, &sys, of);
+    let exec = executor::Executor::from_config(&sys, cmd_tx, status_rx)?;
+
+    tokio::try_join!(process_manager.run(), exec.run())?;
+
+    log::debug!("done");
     Ok(())
 }
 

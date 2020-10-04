@@ -71,4 +71,38 @@ mod start_stop {
         f.expect_program_terminates(&srv);
         f.expect_stop();
     }
+
+    #[test]
+    fn critical_success_sets_exit_status() {
+        let mut f = Fixture::new("critical.toml");
+
+        let srv = f.expect_program_ready();
+        assert_eq!("server", srv.name);
+
+        let task = f.expect_program_ready();
+        assert_eq!("task", task.name);
+
+        f.expect_program_dies(&task);
+        f.expect_program_terminates(&srv);
+
+        let status = f.stop();
+        assert!(status.expect("status").success());
+    }
+
+    #[test]
+    fn critical_failure_sets_exit_status() {
+        let mut f = Fixture::new("critical_failure.toml");
+
+        let srv = f.expect_program_ready();
+        assert_eq!("server", srv.name);
+
+        let task = f.expect_program_ready();
+        assert_eq!("task", task.name);
+
+        f.expect_program_dies(&task);
+        f.expect_program_terminates(&srv);
+
+        let status = f.stop();
+        assert!(!status.expect("status").success());
+    }
 }
