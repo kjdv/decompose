@@ -17,6 +17,12 @@ pub struct Executor {
     dependency_graph: Graph,
     tx: process::mpsc::Sender<Command>,
     rx: process::mpsc::Receiver<Event>,
+
+    // todo: this tracks a lot of state, in a fiddly way. Partially
+    // because of different required behavior when starting up, shutting down..
+    // refactoring ideas:
+    //   1. turn this into a state machine (init->run->shutdown)
+    //   2. similar, but each state in just one (private) method. Keep state variables on the function scope
     running: HashSet<NodeHandle>,
     pending: HashSet<NodeHandle>,
     shutting_down: bool,
