@@ -30,7 +30,7 @@ where
     use tokio::io::AsyncWriteExt;
 
     while let Ok(line) = rx.recv().await.map_err(|e| {
-        log::warn!("{}, some output might be missing", e);
+        log::debug!("{}, some output might be missing", e);
         e
     }) {
         let line = formatter(line);
