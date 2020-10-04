@@ -26,7 +26,7 @@ pub struct Executor {
     running: HashSet<NodeHandle>,
     pending: HashSet<NodeHandle>,
     shutting_down: bool,
-    status: Option<(String, process::ExitStatus)>,
+    status: Option<ExitStatus>,
 }
 
 impl Executor {
@@ -65,13 +65,7 @@ impl Executor {
         log::info!("stopping execution");
         match self.status {
             None => Ok(()),
-            Some((name, status)) => {
-                if status.success() {
-                    Ok(())
-                } else {
-                    Err(Box::new(ExitStatusError { name, status }))
-                }
-            }
+            Some(status) => status.into_result(),
         }
     }
 
@@ -145,7 +139,10 @@ impl Executor {
                 log::info!("critical task {} stopped", p.name);
 
                 if self.status.is_none() && status.is_some() {
-                    self.status = Some((p.name.clone(), status.unwrap()));
+                    self.status = Some(ExitStatus {
+                        name: p.name.clone(),
+                        status: status.unwrap(),
+                    });
                 }
 
                 let _ = self.shutdown().await;
@@ -185,6 +182,23 @@ impl Executor {
 
     async fn send_tx(mut tx: mpsc::Sender<Command>, cmd: Command) {
         tx.send(cmd).await.expect("channel error");
+    }
+}
+
+struct ExitStatus {
+    name: String,
+    status: process::ExitStatus,
+}
+
+impl ExitStatus {
+    fn into_result(self) -> Result<()> {
+        match self.status.success() {
+            true => Ok(()),
+            false => Err(Box::new(ExitStatusError {
+                name: self.name,
+                status: self.status,
+            })),
+        }
     }
 }
 
