@@ -69,7 +69,6 @@ pub async fn output(mut rx: Receiver, re: &str) -> Result {
                 let line = line.trim_end_matches(rn);
 
                 if re.is_match(line) {
-                    println!("match");
                     return Ok(true);
                 }
             }
